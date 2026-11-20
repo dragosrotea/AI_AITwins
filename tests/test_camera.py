@@ -2,6 +2,7 @@ import unittest
 
 from backend.cv.camera import CameraConfig, LatestFrame, CameraCapture
 from backend.cv.face_landmarks import FaceLandmarker, LandmarkResult
+from backend.cv.run import fake_sequences, state_dict
 
 
 class LatestFrameTest(unittest.TestCase):
@@ -31,6 +32,24 @@ class FaceLandmarkerTest(unittest.TestCase):
 
         with self.assertRaisesRegex(RuntimeError, "download_datasets.sh mediapipe"):
             landmarker.open()
+
+
+class FakePublisherTest(unittest.TestCase):
+    def test_fake_state_has_shared_contract_fields(self) -> None:
+        state = next(fake_sequences("normal"))
+        data = state_dict(state)
+
+        expected = {
+            "face_present", "eye_closed_p", "eyes_closed_ms", "perclos_60s",
+            "blink_rate_pm", "gaze_dispersion_30s", "head", "yawn_p",
+            "yawns_10m", "anger_p", "zoning_visual_p", "phone_in_hand", "fps",
+        }
+        self.assertEqual(set(data), expected)
+
+    def test_fake_sequences_include_requested_modes(self) -> None:
+        for sequence in ("normal", "eyes_closing", "looking_down", "angry", "staring"):
+            state = next(fake_sequences(sequence))
+            self.assertIn(state.face_present, (True, False))
 
 
 class CameraCaptureTest(unittest.TestCase):

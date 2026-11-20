@@ -5,6 +5,11 @@ cv:
     capture_height: 720
     process_width: 640
     process_height: 360
+  publisher:
+    state_rate_hz: 10
+    broker_url: ws://localhost:8765/bus
+  fake:
+    sequence: all
   face_landmarks:
     model_path: models/face_landmarker.task
     num_faces: 1
