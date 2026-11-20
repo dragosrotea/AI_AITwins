@@ -28,18 +28,14 @@ import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
+from backend.bus.topics import topic_matches
+
 log = logging.getLogger("bus.broker")
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 DEFAULT_QUEUE_SIZE = 200
 RATE_WINDOW_S = 5.0
-
-
-def topic_matches(pattern: str, topic: str) -> bool:
-    if pattern.endswith("*"):
-        return topic.startswith(pattern[:-1])
-    return pattern == topic
 
 
 class Client:

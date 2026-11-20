@@ -4,33 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import json
-import socket
 
 import httpx
-import pytest
-import uvicorn
 import websockets
 
-from backend.bus.broker import Client, create_app, topic_matches
-
-
-def free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
-@pytest.fixture
-async def broker_url():
-    port = free_port()
-    app = create_app(queue_size=200)
-    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
-    task = asyncio.create_task(server.serve())
-    while not server.started:  # noqa: ASYNC110 (uvicorn exposes no started event)
-        await asyncio.sleep(0.01)
-    yield f"127.0.0.1:{port}", app.state.broker
-    server.should_exit = True
-    await task
+from backend.bus.broker import Client, topic_matches
 
 
 async def connect(addr: str, topics: list[str] | None = None):
