@@ -1,0 +1,7 @@
+cv:
+  camera:
+    index: 0
+    capture_width: 1280
+    capture_height: 720
+    process_width: 640
+    process_height: 360
