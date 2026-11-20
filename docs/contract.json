@@ -1,0 +1,1113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DriveMate bus contract",
+  "version": "1.0.0",
+  "description": "Generated from backend/schemas.py by scripts/export_schema.py. Do not edit by hand.",
+  "envelope": {
+    "$ref": "#/$defs/Envelope"
+  },
+  "topics": {
+    "driver.state": {
+      "model": {
+        "$ref": "#/$defs/DriverState"
+      },
+      "producers": [
+        "cv"
+      ],
+      "rate_hz": 10.0
+    },
+    "camera.frame": {
+      "model": {
+        "$ref": "#/$defs/CameraFrame"
+      },
+      "producers": [
+        "cv"
+      ],
+      "rate_hz": 5.0
+    },
+    "detector.event": {
+      "model": {
+        "$ref": "#/$defs/DetectorEvent"
+      },
+      "producers": [
+        "cv",
+        "core"
+      ],
+      "rate_hz": null
+    },
+    "audio.features": {
+      "model": {
+        "$ref": "#/$defs/AudioFeatures"
+      },
+      "producers": [
+        "voice"
+      ],
+      "rate_hz": 5.0
+    },
+    "voice.status": {
+      "model": {
+        "$ref": "#/$defs/VoiceStatus"
+      },
+      "producers": [
+        "voice"
+      ],
+      "rate_hz": null
+    },
+    "voice.reply": {
+      "model": {
+        "$ref": "#/$defs/VoiceReply"
+      },
+      "producers": [
+        "voice"
+      ],
+      "rate_hz": null
+    },
+    "voice.say": {
+      "model": {
+        "$ref": "#/$defs/VoiceSay"
+      },
+      "producers": [
+        "core"
+      ],
+      "rate_hz": null
+    },
+    "alert.state": {
+      "model": {
+        "$ref": "#/$defs/AlertState"
+      },
+      "producers": [
+        "core"
+      ],
+      "rate_hz": null
+    },
+    "vehicle.motion": {
+      "model": {
+        "$ref": "#/$defs/VehicleMotion"
+      },
+      "producers": [
+        "core"
+      ],
+      "rate_hz": 10.0
+    },
+    "control.music": {
+      "model": {
+        "$ref": "#/$defs/ControlMusic"
+      },
+      "producers": [
+        "core"
+      ],
+      "rate_hz": null
+    },
+    "checkin.schedule": {
+      "model": {
+        "$ref": "#/$defs/CheckinSchedule"
+      },
+      "producers": [
+        "core"
+      ],
+      "rate_hz": null
+    },
+    "trip.summary": {
+      "model": {
+        "$ref": "#/$defs/TripSummary"
+      },
+      "producers": [
+        "core"
+      ],
+      "rate_hz": null
+    },
+    "music.volume": {
+      "model": {
+        "$ref": "#/$defs/MusicVolume"
+      },
+      "producers": [
+        "ui"
+      ],
+      "rate_hz": null
+    },
+    "bio.hr": {
+      "model": {
+        "$ref": "#/$defs/BioHR"
+      },
+      "producers": [
+        "hr",
+        "ui"
+      ],
+      "rate_hz": 1.0
+    },
+    "context.road": {
+      "model": {
+        "$ref": "#/$defs/ContextRoad"
+      },
+      "producers": [
+        "maps",
+        "ui"
+      ],
+      "rate_hz": 1.0
+    },
+    "control.trip": {
+      "model": {
+        "$ref": "#/$defs/ControlTrip"
+      },
+      "producers": [
+        "ui"
+      ],
+      "rate_hz": null
+    },
+    "control.replay": {
+      "model": {
+        "$ref": "#/$defs/ControlReplay"
+      },
+      "producers": [
+        "ui"
+      ],
+      "rate_hz": null
+    },
+    "control.inject": {
+      "model": {
+        "$ref": "#/$defs/ControlInject"
+      },
+      "producers": [
+        "ui"
+      ],
+      "rate_hz": null
+    }
+  },
+  "$defs": {
+    "AlertState": {
+      "additionalProperties": false,
+      "description": "alert.state, on every status change.",
+      "properties": {
+        "alert_id": {
+          "title": "Alert Id",
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "distraction",
+            "microsleep",
+            "drowsiness",
+            "phone",
+            "no_face",
+            "road_rage",
+            "zoning_out",
+            "crash_candidate",
+            "checkin_due",
+            "break_due"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "tier": {
+          "enum": [
+            "T1",
+            "T2",
+            "T3"
+          ],
+          "title": "Tier",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "queued",
+            "held",
+            "speaking",
+            "listening",
+            "closed",
+            "escalated"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "reply": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reply"
+        },
+        "intent": {
+          "anyOf": [
+            {
+              "enum": [
+                "OK",
+                "NOT_OK",
+                "ANSWER",
+                "HELP",
+                "UNCLEAR",
+                "NONE"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Intent"
+        },
+        "latency_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Latency Ms"
+        }
+      },
+      "required": [
+        "alert_id",
+        "type",
+        "tier",
+        "status",
+        "text"
+      ],
+      "title": "AlertState",
+      "type": "object"
+    },
+    "AudioFeatures": {
+      "additionalProperties": false,
+      "description": "audio.features, 5 Hz.",
+      "properties": {
+        "loudness_db": {
+          "title": "Loudness Db",
+          "type": "number"
+        },
+        "baseline_db": {
+          "title": "Baseline Db",
+          "type": "number"
+        },
+        "shouting": {
+          "title": "Shouting",
+          "type": "boolean"
+        },
+        "speaking": {
+          "title": "Speaking",
+          "type": "boolean"
+        },
+        "swear_count_60s": {
+          "minimum": 0,
+          "title": "Swear Count 60S",
+          "type": "integer"
+        },
+        "anger_voice_p": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Anger Voice P"
+        }
+      },
+      "required": [
+        "loudness_db",
+        "baseline_db",
+        "shouting",
+        "speaking",
+        "swear_count_60s"
+      ],
+      "title": "AudioFeatures",
+      "type": "object"
+    },
+    "BioHR": {
+      "additionalProperties": false,
+      "description": "bio.hr, 1 Hz.",
+      "properties": {
+        "bpm": {
+          "exclusiveMinimum": 0.0,
+          "title": "Bpm",
+          "type": "number"
+        },
+        "rr_ms": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Rr Ms",
+          "type": "array"
+        },
+        "source": {
+          "enum": [
+            "suunto",
+            "strap",
+            "sim"
+          ],
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "bpm",
+        "source"
+      ],
+      "title": "BioHR",
+      "type": "object"
+    },
+    "CameraFrame": {
+      "additionalProperties": false,
+      "description": "camera.frame, 5 Hz. 320 px wide JPEG; never written to disk.",
+      "properties": {
+        "jpeg_b64": {
+          "title": "Jpeg B64",
+          "type": "string"
+        }
+      },
+      "required": [
+        "jpeg_b64"
+      ],
+      "title": "CameraFrame",
+      "type": "object"
+    },
+    "CheckinSchedule": {
+      "additionalProperties": false,
+      "description": "checkin.schedule, on change.",
+      "properties": {
+        "interval_min": {
+          "exclusiveMinimum": 0.0,
+          "title": "Interval Min",
+          "type": "number"
+        },
+        "next_checkin_ts": {
+          "title": "Next Checkin Ts",
+          "type": "number"
+        },
+        "next_break_ts": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Next Break Ts"
+        }
+      },
+      "required": [
+        "interval_min",
+        "next_checkin_ts"
+      ],
+      "title": "CheckinSchedule",
+      "type": "object"
+    },
+    "ContextRoad": {
+      "additionalProperties": false,
+      "description": "context.road, 1 Hz.",
+      "properties": {
+        "load": {
+          "enum": [
+            "LOW",
+            "MEDIUM",
+            "HIGH"
+          ],
+          "title": "Load",
+          "type": "string"
+        },
+        "traffic": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Traffic"
+        },
+        "next_maneuver": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Next Maneuver"
+        },
+        "dist_m": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dist M"
+        }
+      },
+      "required": [
+        "load"
+      ],
+      "title": "ContextRoad",
+      "type": "object"
+    },
+    "ControlInject": {
+      "additionalProperties": false,
+      "description": "control.inject, on event.",
+      "properties": {
+        "event": {
+          "enum": [
+            "harsh_brake",
+            "crash"
+          ],
+          "title": "Event",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event"
+      ],
+      "title": "ControlInject",
+      "type": "object"
+    },
+    "ControlMusic": {
+      "additionalProperties": false,
+      "description": "control.music, on event.",
+      "properties": {
+        "duck": {
+          "title": "Duck",
+          "type": "boolean"
+        },
+        "level": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Level",
+          "type": "number"
+        }
+      },
+      "required": [
+        "duck",
+        "level"
+      ],
+      "title": "ControlMusic",
+      "type": "object"
+    },
+    "ControlReplay": {
+      "additionalProperties": false,
+      "description": "control.replay, on event. trip picks the replay trip; segment is the seek position.",
+      "properties": {
+        "action": {
+          "enum": [
+            "play",
+            "pause",
+            "seek"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "trip": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trip"
+        },
+        "segment": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "seconds from trip start",
+          "title": "Segment"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "title": "ControlReplay",
+      "type": "object"
+    },
+    "ControlTrip": {
+      "additionalProperties": false,
+      "description": "control.trip, on event. pretrip is required on start.",
+      "properties": {
+        "action": {
+          "enum": [
+            "start",
+            "stop"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "pretrip": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Pretrip"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "title": "ControlTrip",
+      "type": "object"
+    },
+    "DetectorEvent": {
+      "additionalProperties": false,
+      "description": "detector.event, on event. Visual events from CV, fusion events from core.",
+      "properties": {
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "distraction",
+            "microsleep",
+            "drowsiness",
+            "phone",
+            "no_face",
+            "road_rage",
+            "zoning_out",
+            "crash_candidate",
+            "checkin_due",
+            "break_due"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "tier": {
+          "enum": [
+            "T1",
+            "T2",
+            "T3"
+          ],
+          "title": "Tier",
+          "type": "string"
+        },
+        "score": {
+          "maximum": 100.0,
+          "minimum": 0.0,
+          "title": "Score",
+          "type": "number"
+        },
+        "signals": {
+          "additionalProperties": true,
+          "title": "Signals",
+          "type": "object"
+        }
+      },
+      "required": [
+        "event_id",
+        "type",
+        "tier",
+        "score"
+      ],
+      "title": "DetectorEvent",
+      "type": "object"
+    },
+    "DriverState": {
+      "additionalProperties": false,
+      "description": "driver.state, 10 Hz. With no face, send 0 or the last value; face_present says why.",
+      "properties": {
+        "face_present": {
+          "title": "Face Present",
+          "type": "boolean"
+        },
+        "eye_closed_p": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Eye Closed P",
+          "type": "number"
+        },
+        "eyes_closed_ms": {
+          "description": "current continuous eye closure",
+          "minimum": 0,
+          "title": "Eyes Closed Ms",
+          "type": "integer"
+        },
+        "perclos_60s": {
+          "description": "fraction of the last 60 s closed",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Perclos 60S",
+          "type": "number"
+        },
+        "blink_rate_pm": {
+          "description": "blinks per minute",
+          "minimum": 0.0,
+          "title": "Blink Rate Pm",
+          "type": "number"
+        },
+        "gaze_dispersion_30s": {
+          "description": "degrees",
+          "minimum": 0.0,
+          "title": "Gaze Dispersion 30S",
+          "type": "number"
+        },
+        "head": {
+          "$ref": "#/$defs/HeadPose"
+        },
+        "yawn_p": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Yawn P",
+          "type": "number"
+        },
+        "yawns_10m": {
+          "minimum": 0,
+          "title": "Yawns 10M",
+          "type": "integer"
+        },
+        "anger_p": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Anger P",
+          "type": "number"
+        },
+        "zoning_visual_p": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Zoning Visual P",
+          "type": "number"
+        },
+        "phone_in_hand": {
+          "title": "Phone In Hand",
+          "type": "boolean"
+        },
+        "fps": {
+          "minimum": 0.0,
+          "title": "Fps",
+          "type": "number"
+        }
+      },
+      "required": [
+        "face_present",
+        "eye_closed_p",
+        "eyes_closed_ms",
+        "perclos_60s",
+        "blink_rate_pm",
+        "gaze_dispersion_30s",
+        "head",
+        "yawn_p",
+        "yawns_10m",
+        "anger_p",
+        "zoning_visual_p",
+        "phone_in_hand",
+        "fps"
+      ],
+      "title": "DriverState",
+      "type": "object"
+    },
+    "Envelope": {
+      "additionalProperties": false,
+      "properties": {
+        "topic": {
+          "title": "Topic",
+          "type": "string"
+        },
+        "ts": {
+          "description": "Unix time in seconds",
+          "title": "Ts",
+          "type": "number"
+        },
+        "src": {
+          "enum": [
+            "cv",
+            "voice",
+            "core",
+            "ui",
+            "hr",
+            "maps"
+          ],
+          "title": "Src",
+          "type": "string"
+        },
+        "data": {
+          "additionalProperties": true,
+          "title": "Data",
+          "type": "object"
+        }
+      },
+      "required": [
+        "topic",
+        "ts",
+        "src",
+        "data"
+      ],
+      "title": "Envelope",
+      "type": "object"
+    },
+    "HeadPose": {
+      "additionalProperties": false,
+      "properties": {
+        "yaw": {
+          "description": "degrees",
+          "title": "Yaw",
+          "type": "number"
+        },
+        "pitch": {
+          "description": "degrees",
+          "title": "Pitch",
+          "type": "number"
+        },
+        "roll": {
+          "description": "degrees",
+          "title": "Roll",
+          "type": "number"
+        }
+      },
+      "required": [
+        "yaw",
+        "pitch",
+        "roll"
+      ],
+      "title": "HeadPose",
+      "type": "object"
+    },
+    "MusicVolume": {
+      "additionalProperties": false,
+      "description": "music.volume, on change.",
+      "properties": {
+        "volume": {
+          "maximum": 100.0,
+          "minimum": 0.0,
+          "title": "Volume",
+          "type": "number"
+        },
+        "playing": {
+          "title": "Playing",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "volume",
+        "playing"
+      ],
+      "title": "MusicVolume",
+      "type": "object"
+    },
+    "Pretrip": {
+      "additionalProperties": false,
+      "description": "Pre-trip form (CI-01). Departure time is the control.trip envelope ts.",
+      "properties": {
+        "planned_min": {
+          "exclusiveMinimum": 0.0,
+          "title": "Planned Min",
+          "type": "number"
+        },
+        "sleep_h": {
+          "maximum": 24.0,
+          "minimum": 0.0,
+          "title": "Sleep H",
+          "type": "number"
+        },
+        "awake_h": {
+          "minimum": 0.0,
+          "title": "Awake H",
+          "type": "number"
+        },
+        "tiredness": {
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Tiredness",
+          "type": "integer"
+        },
+        "caffeine": {
+          "description": "caffeine in the last 2 h",
+          "title": "Caffeine",
+          "type": "boolean"
+        },
+        "engagement": {
+          "enum": [
+            "trivia",
+            "fact",
+            "quiet"
+          ],
+          "title": "Engagement",
+          "type": "string"
+        },
+        "lang": {
+          "enum": [
+            "ro",
+            "en"
+          ],
+          "title": "Lang",
+          "type": "string"
+        },
+        "emergency_contact": {
+          "description": "phone number, E.164",
+          "title": "Emergency Contact",
+          "type": "string"
+        },
+        "resting_hr": {
+          "exclusiveMinimum": 0.0,
+          "title": "Resting Hr",
+          "type": "number"
+        }
+      },
+      "required": [
+        "planned_min",
+        "sleep_h",
+        "awake_h",
+        "tiredness",
+        "caffeine",
+        "engagement",
+        "lang",
+        "emergency_contact",
+        "resting_hr"
+      ],
+      "title": "Pretrip",
+      "type": "object"
+    },
+    "TripSummary": {
+      "additionalProperties": false,
+      "description": "trip.summary, at trip end.",
+      "properties": {
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "stats": {
+          "additionalProperties": true,
+          "title": "Stats",
+          "type": "object"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "TripSummary",
+      "type": "object"
+    },
+    "VehicleMotion": {
+      "additionalProperties": false,
+      "description": "vehicle.motion, 10 Hz. source \"replay\" (UAH-DriveSet) or \"sim\" (core --fake).",
+      "properties": {
+        "accel_long_g": {
+          "title": "Accel Long G",
+          "type": "number"
+        },
+        "accel_lat_g": {
+          "title": "Accel Lat G",
+          "type": "number"
+        },
+        "accel_mag_g": {
+          "minimum": 0.0,
+          "title": "Accel Mag G",
+          "type": "number"
+        },
+        "speed_kmh": {
+          "minimum": 0.0,
+          "title": "Speed Kmh",
+          "type": "number"
+        },
+        "lat": {
+          "title": "Lat",
+          "type": "number"
+        },
+        "lon": {
+          "title": "Lon",
+          "type": "number"
+        },
+        "road": {
+          "enum": [
+            "motorway",
+            "secondary"
+          ],
+          "title": "Road",
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "replay",
+            "sim"
+          ],
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "accel_long_g",
+        "accel_lat_g",
+        "accel_mag_g",
+        "speed_kmh",
+        "lat",
+        "lon",
+        "road",
+        "source"
+      ],
+      "title": "VehicleMotion",
+      "type": "object"
+    },
+    "VoiceReply": {
+      "additionalProperties": false,
+      "description": "voice.reply, on event. intent NONE means no reply within listen_s.",
+      "properties": {
+        "alert_id": {
+          "title": "Alert Id",
+          "type": "string"
+        },
+        "transcript": {
+          "title": "Transcript",
+          "type": "string"
+        },
+        "intent": {
+          "enum": [
+            "OK",
+            "NOT_OK",
+            "ANSWER",
+            "HELP",
+            "UNCLEAR",
+            "NONE"
+          ],
+          "title": "Intent",
+          "type": "string"
+        },
+        "latency_ms": {
+          "minimum": 0,
+          "title": "Latency Ms",
+          "type": "integer"
+        },
+        "path": {
+          "enum": [
+            "keyword",
+            "llm"
+          ],
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "alert_id",
+        "transcript",
+        "intent",
+        "latency_ms",
+        "path"
+      ],
+      "title": "VoiceReply",
+      "type": "object"
+    },
+    "VoiceSay": {
+      "additionalProperties": false,
+      "description": "voice.say, on event.",
+      "properties": {
+        "alert_id": {
+          "title": "Alert Id",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "tier": {
+          "enum": [
+            "T1",
+            "T2",
+            "T3"
+          ],
+          "title": "Tier",
+          "type": "string"
+        },
+        "lang": {
+          "enum": [
+            "ro",
+            "en"
+          ],
+          "title": "Lang",
+          "type": "string"
+        },
+        "listen_s": {
+          "default": 8.0,
+          "minimum": 0.0,
+          "title": "Listen S",
+          "type": "number"
+        },
+        "audio_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Audio Key"
+        }
+      },
+      "required": [
+        "alert_id",
+        "text",
+        "tier",
+        "lang"
+      ],
+      "title": "VoiceSay",
+      "type": "object"
+    },
+    "VoiceStatus": {
+      "additionalProperties": false,
+      "description": "voice.status, on change.",
+      "properties": {
+        "alert_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Alert Id"
+        },
+        "state": {
+          "enum": [
+            "speaking",
+            "listening",
+            "idle"
+          ],
+          "title": "State",
+          "type": "string"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "title": "VoiceStatus",
+      "type": "object"
+    }
+  }
+}
