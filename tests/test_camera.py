@@ -1,6 +1,7 @@
 import unittest
 
 from backend.cv.camera import CameraConfig, LatestFrame, CameraCapture
+from backend.cv.face_landmarks import FaceLandmarker, LandmarkResult
 
 
 class LatestFrameTest(unittest.TestCase):
@@ -22,6 +23,14 @@ class CameraConfigTest(unittest.TestCase):
         self.assertEqual(config.index, 0)
         self.assertEqual((config.capture_width, config.capture_height), (1280, 720))
         self.assertEqual((config.process_width, config.process_height), (640, 360))
+
+
+class FaceLandmarkerTest(unittest.TestCase):
+    def test_missing_model_is_actionable(self) -> None:
+        landmarker = FaceLandmarker("models/does-not-exist.task")
+
+        with self.assertRaisesRegex(RuntimeError, "download_datasets.sh mediapipe"):
+            landmarker.open()
 
 
 class CameraCaptureTest(unittest.TestCase):

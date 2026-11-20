@@ -16,7 +16,8 @@ Datasets:
   dmd        DMD (manual Vicomtech access request)
   age_faces  Age Detection - Human Faces 18-60 (via Kaggle)
   syndd1     SynDD1 / PMC9730022 (manual Mendeley download)
-  all        Run the Kaggle commands and print manual instructions
+  mediapipe  Download the MediaPipe Face Landmarker task model
+  all        Run supported downloads and print manual instructions
 
 Environment:
   DATA_ROOT  Destination root (default: data/raw)
@@ -84,6 +85,23 @@ Source article: https://pmc.ncbi.nlm.nih.gov/articles/PMC9730022/
 EOF
 }
 
+download_mediapipe() {
+  local dest="$PROJECT_ROOT/models"
+  local model="$dest/face_landmarker.task"
+  mkdir -p "$dest"
+  if [[ -s "$model" ]]; then
+    echo "MediaPipe model already exists: $model"
+    return
+  fi
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "Missing curl. Install curl and retry mediapipe." >&2
+    return 1
+  fi
+  curl -L --fail --show-error --output "$model.tmp" \
+    "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task"
+  mv "$model.tmp" "$model"
+}
+
 if [[ $# -eq 0 ]]; then
   usage
   exit 0
@@ -97,8 +115,9 @@ for dataset in "$@"; do
     yawdd) manual_yawdd ;;
     dmd) manual_dmd ;;
     syndd1) manual_syndd1 ;;
+    mediapipe) download_mediapipe ;;
     all)
-      for item in age_faces fer2013 mrl yawdd dmd syndd1; do
+      for item in age_faces fer2013 mrl yawdd dmd syndd1 mediapipe; do
         if [[ "$item" == mrl || "$item" == yawdd || "$item" == dmd || "$item" == syndd1 ]]; then
           "manual_$item"
         else
