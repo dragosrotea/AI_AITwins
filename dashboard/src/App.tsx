@@ -14,16 +14,19 @@ export default function App() {
           <p className="eyebrow">DRIVER SAFETY COPILOT</p>
           <h1>DriveMate</h1>
         </div>
-        <div className={`connection connection--${status}`}>
+        <div className={`connection connection--${status}`} role="status" aria-live="polite">
           <span className="connection-dot" />
           {status === 'connected' ? 'Broker connected' : status === 'connecting' ? 'Connecting' : 'Reconnecting'}
         </div>
       </header>
       <section className="welcome-card">
-        <p className="eyebrow">LIVE DASHBOARD</p>
-        <h2>Your drive, with a second pair of eyes.</h2>
-        <p className="intro">Live driver and vehicle signals will appear here as soon as the broker is online.</p>
-        <div className="bus-address"><span className="pulse" />{import.meta.env.VITE_BUS_URL || 'ws://localhost:8765/bus'}</div>
+        <div className="welcome-content">
+          <p className="eyebrow">LIVE DASHBOARD</p>
+          <h2>Your drive, with a second pair of eyes.</h2>
+          <p className="intro">Live driver and vehicle signals will appear here as soon as the broker is online.</p>
+          <div className="bus-address"><span className="pulse" />{import.meta.env.VITE_BUS_URL || 'ws://localhost:8765/bus'}</div>
+        </div>
+        <div className="glass-orb" aria-hidden="true"><span /></div>
       </section>
       <footer>DriveMate <span>·</span> Safety support for every drive</footer>
     </main>
