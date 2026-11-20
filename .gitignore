@@ -1,0 +1,45 @@
+# Datasets: never committed (ML-03); only the download script
+data/*
+!data/.gitkeep
+!data/download_datasets.sh
+
+# Logs and trip logs (NF-13 logs stay local)
+logs/
+*.jsonl
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Large model files (git can't filter by size: anything over 50 MB goes in models/large/)
+models/large/
+*.ckpt
+*.safetensors
+*.bin
+*.h5
+
+# Raw media: never stored (privacy). Pre-rendered audio and music in assets/ are allowed.
+*.mp4
+*.avi
+*.mov
+*.wav
+!assets/**
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Node / dashboard
+node_modules/
+dashboard/dist/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
