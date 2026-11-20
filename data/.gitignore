@@ -1,0 +1,5 @@
+# Dataset downloads and media recordings stay out of git.
+raw/
+*
+!.gitignore
+!download_datasets.sh
