@@ -1,4 +1,4 @@
-"""Run the standalone DriveMate voice simulator against the team broker."""
+"""Run the DriveMate voice process against the team broker."""
 
 import argparse
 import asyncio
@@ -13,9 +13,7 @@ REPLY_DELAY_S = 2.0
 class VoiceBus(Protocol):
     async def connect(self) -> None: ...
 
-    def subscribe(
-        self, topics: list[str], handler: Callable[[dict], Awaitable[None]]
-    ) -> None: ...
+    def subscribe(self, topics: list[str], handler: Callable[[dict], Awaitable[None]]) -> None: ...
 
     async def publish(self, topic: str, data: dict) -> None: ...
 
@@ -69,19 +67,28 @@ async def run_fake(bus: VoiceBus) -> None:
             await asyncio.sleep(next_tick - now)
 
 
+async def run(fake: bool) -> None:
+    from backend.bus.client import BusClient
+
+    bus = BusClient("voice")
+    try:
+        if fake:
+            await run_fake(bus)
+        else:
+            from .live import run_live
+
+            await run_live(bus)
+    finally:
+        await bus.close()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--fake", action="store_true", required=True)
-    parser.parse_args()
-    try:
-        from backend.bus.client import BusClient
-    except ModuleNotFoundError as error:
-        if error.name not in {"backend.bus", "backend.bus.client"}:
-            raise
-        parser.exit(1, "The shared backend.bus.client is required to run fake voice.\n")
+    parser.add_argument("--fake", action="store_true", help="Simulate voice without audio hardware")
+    args = parser.parse_args()
 
     try:
-        asyncio.run(run_fake(BusClient("voice")))
+        asyncio.run(run(args.fake))
     except KeyboardInterrupt:
         pass
 

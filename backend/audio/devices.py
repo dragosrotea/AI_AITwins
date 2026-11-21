@@ -1,9 +1,10 @@
 """DriveMate audio device selection and shared microphone capture."""
 
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Lock
+from time import perf_counter
 from typing import Any, Self
 
 import sounddevice as sd
@@ -28,9 +29,7 @@ class AudioSettings:
         for key in ("input_device", "output_device"):
             value = voice[key]
             if value is not None and (type(value) is not int or value < 0):
-                raise ValueError(
-                    f"voice.{key} must be null or a nonnegative device index"
-                )
+                raise ValueError(f"voice.{key} must be null or a nonnegative device index")
         duration = voice["ring_buffer_s"]
         if type(duration) is not int or duration <= 0:
             raise ValueError("voice.ring_buffer_s must be a positive integer")
@@ -41,6 +40,7 @@ class AudioSettings:
 class AudioFrame:
     sequence: int
     pcm: bytes
+    ended_at: float = field(default_factory=perf_counter)
 
 
 class Microphone:
@@ -48,9 +48,7 @@ class Microphone:
 
     def __init__(self, settings: AudioSettings) -> None:
         self._device = settings.input_device
-        self._frames: deque[AudioFrame] = deque(
-            maxlen=settings.ring_buffer_s * 1000 // FRAME_MS
-        )
+        self._frames: deque[AudioFrame] = deque(maxlen=settings.ring_buffer_s * 1000 // FRAME_MS)
         self._lock = Lock()
         self._sequence = 0
         self._stream: sd.RawInputStream | None = None
@@ -58,10 +56,11 @@ class Microphone:
     def _capture(self, data: Any, frames: int, _time: object, _status: object) -> None:
         if frames != FRAME_SAMPLES:
             return
+        ended_at = perf_counter()
         pcm = bytes(data)
         with self._lock:
             self._sequence += 1
-            self._frames.append(AudioFrame(self._sequence, pcm))
+            self._frames.append(AudioFrame(self._sequence, pcm, ended_at))
 
     def cursor(self) -> int:
         """Mark the latest frame, for example when a reply window opens."""
