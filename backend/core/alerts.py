@@ -17,6 +17,11 @@ Gap: voice publishes its reply and only then goes idle, and drops a non-T3 voice
 while it is busy. So after a reply or timeout the next voice.say (repeat, escalation or next
 alert) waits voice_gap_s, run from tick(). A newly submitted T3 skips it: voice always takes T3.
 
+Rate limits (LEAD-T14, AL-02): a new T1 or T2 alert is suppressed inside its type's
+cooldown_s, a T1 within t1_min_interval_s of the last T1, and any T1/T2 within
+noncritical_min_interval_s of the last T1/T2. T3 is never limited; repeats and escalations are
+not new alerts. Suppressed alerts are not spoken but go to on_suppress (the trip log, RR-07).
+
 Replies: OK and ANSWER close; NOT_OK closes and calls on_follow_up; HELP closes and calls
 on_emergency. UNCLEAR, NONE or a timeout is a miss: the first max_repeats misses repeat the
 short text, the next escalates T1 -> T2 -> T3; a miss at T3 after its repeats calls on_alarm
@@ -61,8 +66,10 @@ class Alert:
     lang: str
     short_text: str | None = None  # used for the repeat; falls back to REPEAT_TEXT
     signals: dict[str, Any] = field(default_factory=dict)
+    audio_key: str | None = None  # pre-rendered clip for `text` (first say only)
     alert_id: str = field(default_factory=lambda: "a-" + uuid.uuid4().hex[:8])
     status: str = "queued"
+    base_tier: str = ""  # tier at submit; escalation raises `tier` only
     misses: int = 0  # misses at the current tier
     spoken: str = ""  # text of the latest voice.say
     reply: str | None = None
@@ -86,6 +93,7 @@ class AlertManager:
         on_emergency: Hook = _noop,
         on_alarm: Hook = _noop,
         on_submit: Callable[[Alert], None] | None = None,
+        on_suppress: Callable[[str, str, str], None] | None = None,
     ) -> None:
         self.cfg = cfg
         self.publish = publish
@@ -94,6 +102,10 @@ class AlertManager:
         self.on_emergency = on_emergency
         self.on_alarm = on_alarm
         self.on_submit = on_submit  # e.g. the trip log, for the trigger signals (AL-04)
+        self.on_suppress = on_suppress  # (type, tier, reason) for alerts held back by AL-02
+        self._last_type: dict[str, float] = {}  # accepted alert times, for the rate limits
+        self._last_t1 = -float("inf")
+        self._last_noncritical = -float("inf")
         self.lang = cfg["default_lang"]
         self.queue: list[Alert] = []
         self.active: Alert | None = None
@@ -111,18 +123,33 @@ class AlertManager:
         short_text: str | None = None,
         signals: dict[str, Any] | None = None,
         lang: str | None = None,
+        audio_key: str | None = None,
     ) -> Alert | None:
-        """Queue an alert. Returns None if one of the same type is already queued or active."""
-        if any(a.type == type for a in self._pending()):
+        """Queue an alert. Returns None if one of the same type is already queued or active,
+        or a rate limit holds it back (AL-02)."""
+        if any(a.type == type for a in self.pending()):
             log.info("drop %s %s: one is already queued or active", tier, type)
             return None
-        alert = Alert(type, tier, text, lang or self.lang, short_text, signals or {})
+        reason = self.blocked(type, tier)
+        if reason is not None:
+            self.suppressed(type, tier, reason)
+            return None
+        now = self.clock()
+        self._last_type[type] = now
+        if tier != "T3":
+            self._last_noncritical = now
+        if tier == "T1":
+            self._last_t1 = now
+        alert = Alert(type, tier, text, lang or self.lang, short_text, signals or {}, audio_key)
         alert.seq = next(self._seq)
+        alert.base_tier = tier
         if self.on_submit is not None:
             self.on_submit(alert)
         self._enqueue(alert)
-        if tier == "T3" and self.active is not None and self.active.tier != "T3":
-            self._preempt()
+        if tier == "T3" and self.active is not None and self.active.base_tier != "T3":
+            # A genuine T3 (microsleep, crash) also cuts off an alert that only reached T3 by
+            # escalating: in the 17:12 demo a microsleep otherwise waited 22 s behind one.
+            self._preempt(alert)
         elif tier == "T3" and self.active is None:
             self._resume = None  # no gap for T3
             self._start_next()
@@ -140,6 +167,27 @@ class AlertManager:
             log.info("cancel queued %s %s", alert.tier, alert.type)
             self._set_status(alert, "closed")
         return dropped
+
+    def blocked(self, type: str, tier: str) -> str | None:
+        """Why a new alert of this type and tier would be suppressed now, or None (AL-02).
+        Callers check it before spending time on wording."""
+        if tier == "T3":
+            return None
+        now = self.clock()
+        cooldown = self.cfg["cooldown_s"].get(type, 0)
+        if now - self._last_type.get(type, -float("inf")) < cooldown:
+            return f"{type} cooldown {cooldown} s"
+        if tier == "T1" and now - self._last_t1 < self.cfg["t1_min_interval_s"]:
+            return f"one T1 per {self.cfg['t1_min_interval_s']} s"
+        if now - self._last_noncritical < self.cfg["noncritical_min_interval_s"]:
+            return f"one non-critical prompt per {self.cfg['noncritical_min_interval_s']} s"
+        return None
+
+    def suppressed(self, type: str, tier: str, reason: str) -> None:
+        """Record an alert held back by a rate limit: logged, never spoken (RR-07)."""
+        log.info("suppress %s %s: %s", tier, type, reason)
+        if self.on_suppress is not None:
+            self.on_suppress(type, tier, reason)
 
     # Input: voice
 
@@ -185,7 +233,8 @@ class AlertManager:
 
     # Internals
 
-    def _pending(self) -> list[Alert]:
+    def pending(self) -> list[Alert]:
+        """Queued alerts plus the active one."""
         return self.queue + ([self.active] if self.active else [])
 
     def _enqueue(self, alert: Alert) -> None:
@@ -206,14 +255,15 @@ class AlertManager:
         if self.active is not None:
             self.active.deadline = float("inf")  # no timeout while waiting to speak
 
-    def _preempt(self) -> None:
+    def _preempt(self, urgent: Alert) -> None:
         interrupted = self.active
         assert interrupted is not None
         log.info("T3 pre-empts %s %s", interrupted.tier, interrupted.type)
         self._resume = None  # a pending repeat of the interrupted alert is dropped
         self.active = None
         self._enqueue(interrupted)  # back in line; it starts again after the T3
-        self._speak(self.queue.pop(0), first=True)
+        self.queue.remove(urgent)  # speak this one, even if the interrupted one sorts first
+        self._speak(urgent, first=True)
 
     def _speak(self, alert: Alert, first: bool) -> None:
         self.active = alert
@@ -232,16 +282,16 @@ class AlertManager:
             + self.cfg["reply_grace_s"]
         )
         self._set_status(alert, "speaking")
-        self.publish(
-            "voice.say",
-            {
-                "alert_id": alert.alert_id,
-                "text": alert.spoken,
-                "tier": alert.tier,
-                "lang": alert.lang,
-                "listen_s": self.cfg["listen_s"],
-            },
-        )
+        say = {
+            "alert_id": alert.alert_id,
+            "text": alert.spoken,
+            "tier": alert.tier,
+            "lang": alert.lang,
+            "listen_s": self.cfg["listen_s"],
+        }
+        if alert.audio_key and alert.spoken == alert.text:
+            say["audio_key"] = alert.audio_key  # the clip matches only the original text
+        self.publish("voice.say", say)
 
     def _miss(self, alert: Alert) -> None:
         alert.misses += 1

@@ -5,9 +5,10 @@ the tier, whatever tier the event carries (a mismatch is logged). Drowsiness and
 first cancel queued trivia (core.routing.cancels, DD-04). Types without a tier or template are
 logged and skipped, and core's own fusion events (src "core") are ignored so they never loop.
 
-Templates follow VR-01 and the LLM rules: short, end in a question, never ask the driver to
-look at or touch anything, never blame, never encourage driving on when tired. LEAD-T13 puts
-the LLM first and config/prompts/templates.yaml as the fallback.
+The spoken text comes from AlertWriter (LEAD-T13): the LLM for T1/T2, else the voice engineer's
+catalog. TEMPLATES below are the last-resort lines and supply the short repeat text (VR-05).
+They follow VR-01 and the LLM rules: short, end in a question, never ask the driver to look at
+or touch anything, never blame, never encourage driving on when tired.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ import logging
 from typing import Any
 
 from backend.core.alerts import Alert, AlertManager
+from backend.core.wording import AlertWriter
 
 log = logging.getLogger("core.events")
 
@@ -63,33 +65,65 @@ TEMPLATES: dict[str, dict[str, tuple[str, str]]] = {
 }
 
 
-def handle_detector_event(
-    envelope: dict[str, Any], manager: AlertManager, routing: dict[str, Any]
-) -> Alert | None:
-    """Turn a validated detector.event envelope into an alert, or None if it is skipped."""
-    if envelope.get("src") != "cv":
-        return None
-    data = envelope["data"]
-    kind = data["type"]
-    tier = routing["tiers"].get(kind)
-    templates = TEMPLATES.get(kind)
-    if tier is None or templates is None:
-        log.info("detector.event %s from cv: no route, skipped", kind)
-        return None
-    if data["tier"] != tier:
-        log.info("detector.event %s: cv says %s, routing uses %s", kind, data["tier"], tier)
-    cancels = routing["cancels"].get(kind, [])
-    if cancels:
-        manager.cancel_queued(cancels)
-    text, short = templates.get(manager.lang) or templates["en"]
-    signals = {"event_id": data["event_id"], "score": data["score"], **data.get("signals", {})}
-    alert = manager.submit(kind, tier, text, short_text=short, signals=signals)
-    if alert is not None:
-        log.info(
-            "detector.event %s (score %.0f) -> %s alert %s",
+class EventRouter:
+    """Routes validated CV detector.event envelopes to the Alert Manager (LEAD-T11, T15, T13)."""
+
+    def __init__(self, manager: AlertManager, routing: dict[str, Any], writer: AlertWriter) -> None:
+        self.manager = manager
+        self.routing = routing
+        self.writer = writer
+        self._wording: set[str] = set()  # types waiting on the LLM, so repeats are dropped
+
+    async def handle(self, envelope: dict[str, Any]) -> Alert | None:
+        if envelope.get("src") != "cv":
+            return None
+        data = envelope["data"]
+        kind = data["type"]
+        tier = self.routing["tiers"].get(kind)
+        if tier is None or kind not in TEMPLATES:
+            log.info("detector.event %s from cv: no route, skipped", kind)
+            return None
+        if data["tier"] != tier:
+            log.info("detector.event %s: cv says %s, routing uses %s", kind, data["tier"], tier)
+        cancels = self.routing["cancels"].get(kind, [])
+        if cancels:
+            self.manager.cancel_queued(cancels)  # DD-04, before any wait
+        if kind in self._wording or any(a.type == kind for a in self.manager.pending()):
+            return None  # one alert per type at a time
+        reason = self.manager.blocked(kind, tier)
+        if reason is not None:  # AL-02: logged, not spoken, and no LLM call spent on it
+            self.manager.suppressed(kind, tier, reason)
+            return None
+        self._wording.add(kind)
+        try:
+            ctx = {"event_type": kind, "tier": tier, "signals": data.get("signals", {})}
+            wording = await self.writer.write(kind, tier, ctx)
+        finally:
+            self._wording.discard(kind)
+        _text, short = TEMPLATES[kind]["en"]
+        signals = {
+            "event_id": data["event_id"],
+            "score": data["score"],
+            **data.get("signals", {}),
+            "text_path": wording.path,  # AL-05: llm, template or builtin
+            "llm_ms": wording.llm_ms,
+        }
+        alert = self.manager.submit(
             kind,
-            data["score"],
             tier,
-            alert.alert_id,
+            wording.text,
+            short_text=short,
+            signals=signals,
+            lang=wording.lang,
+            audio_key=wording.audio_key,
         )
-    return alert
+        if alert is not None:
+            log.info(
+                "detector.event %s (score %.0f) -> %s alert %s, text from %s",
+                kind,
+                data["score"],
+                tier,
+                alert.alert_id,
+                wording.path,
+            )
+        return alert

@@ -29,9 +29,10 @@ from pydantic import ValidationError
 from backend.bus.client import BusClient
 from backend.config import get_config
 from backend.core.alerts import Alert, AlertManager
-from backend.core.events import handle_detector_event
+from backend.core.events import TEMPLATES, EventRouter
 from backend.core.triplog import TripLog
 from backend.core.vehicle import Injector, Player, load_trips
+from backend.core.wording import AlertWriter
 from backend.schemas import validate
 
 log = logging.getLogger("core")
@@ -228,6 +229,13 @@ def alert_created(triplog: TripLog) -> Any:
     return note
 
 
+def alert_suppressed(triplog: TripLog) -> Any:
+    def note(kind: str, tier: str, reason: str) -> None:
+        triplog.note("alert_suppressed", {"type": kind, "tier": tier, "reason": reason})
+
+    return note
+
+
 def attach_alerts(
     bus: BusClient, cfg: dict[str, Any], triplog: TripLog | None = None
 ) -> AlertManager:
@@ -239,6 +247,7 @@ def attach_alerts(
         on_emergency=log_hook("emergency"),
         on_alarm=log_hook("alarm"),
         on_submit=alert_created(triplog) if triplog else None,
+        on_suppress=alert_suppressed(triplog) if triplog else None,
     )
     bus.subscribe(["voice.status"], checked("voice.status", manager.on_voice_status))
     bus.subscribe(["voice.reply"], checked("voice.reply", manager.on_voice_reply))
@@ -250,6 +259,10 @@ def attach_alerts(
 
     bus.subscribe(["control.trip"], checked("control.trip", on_trip))
 
+    writer = AlertWriter(cfg["core"]["alerts"]["llm_timeout_s"], TEMPLATES)
+    router = EventRouter(manager, cfg["core"]["routing"], writer)
+    running: set[asyncio.Task[Any]] = set()
+
     def on_detector_event(envelope: dict[str, Any]) -> None:
         # Needs the envelope (src), so it validates here instead of through checked().
         try:
@@ -257,7 +270,10 @@ def attach_alerts(
         except (ValidationError, KeyError) as error:
             log.warning("ignored bad detector.event from %s: %s", envelope.get("src"), error)
             return
-        handle_detector_event(envelope, manager, cfg["core"]["routing"])  # LEAD-T11, T15
+        # The LLM may take up to 2 s: never block the bus handler (LEAD-T13).
+        task = asyncio.get_running_loop().create_task(router.handle(envelope))
+        running.add(task)
+        task.add_done_callback(running.discard)
 
     bus.subscribe(["detector.event"], on_detector_event)
     return manager

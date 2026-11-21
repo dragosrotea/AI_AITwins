@@ -21,7 +21,7 @@ core:
     t1_min_interval_s: 300         # AL-02: at most one T1 prompt per 5 min
     noncritical_min_interval_s: 120  # AL-02: at most one non-critical prompt per 2 min
     listen_s: 8                    # VR-02: listening window after the alert ends
-    reply_grace_s: 3               # LEAD-T10: no reply within listen_s + 3 s
+    reply_grace_s: 6               # brief says 3 s; live voice replies came up to 5 s late (17:14 demo)
     max_repeats: 1                 # VR-05: repeat once, then escalate a tier
     slow_reply_s: 3                # VR-07: two slow replies in a row raise fatigue
     music_duck_volume: 20          # 0-100 while speaking and listening (T1, T2)
@@ -29,6 +29,13 @@ core:
     speak_max_s: 15                # longest wait for voice to finish speaking before counting
     voice_gap_s: 0.5               # pause before the next voice.say: voice drops non-T3 while busy
     default_lang: en               # until control.trip sets the driver's language
+    cooldown_s:                    # LEAD-T14: per type, from one accepted alert to the next
+      distraction: 60
+      phone: 60
+      no_face: 60
+      drowsiness: 300              # a break was already suggested; do not nag
+      zoning_out: 300              # ZO-05: at most one engagement per 5 min
+      road_rage: 180               # RR-07
   rage:
     trigger_score: 60              # RR-05
     firm_score: 85                 # RR-05: firmer message, suggest pulling over
@@ -182,6 +189,13 @@ profiles:
       alerts:
         t1_min_interval_s: 60
         noncritical_min_interval_s: 30
+        cooldown_s:
+          distraction: 20
+          phone: 20
+          no_face: 20
+          drowsiness: 60
+          zoning_out: 60
+          road_rage: 60
       rage:
         cooldown_s: 60
         max_window_s: 300

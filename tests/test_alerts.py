@@ -10,7 +10,9 @@ from backend.config import load_config
 from backend.core.alerts import ESCALATE_TEXT, REPEAT_TEXT, Alert, AlertManager
 from backend.schemas import validate
 
-CFG = load_config("default")["core"]["alerts"]
+RATE_CFG = load_config("default")["core"]["alerts"]  # real AL-02 limits (LEAD-T14 tests)
+# Queue and reply tests submit alerts seconds apart: run them without the rate limits.
+CFG = {**RATE_CFG, "t1_min_interval_s": 0, "noncritical_min_interval_s": 0, "cooldown_s": {}}
 GAP = CFG["voice_gap_s"]
 LISTEN = CFG["listen_s"] + CFG["reply_grace_s"]
 FIRST_DEADLINE = CFG["speak_max_s"] + LISTEN
@@ -27,17 +29,19 @@ class FakeClock:
 class Rig:
     """An AlertManager wired to a fake clock, a message recorder and recording hooks."""
 
-    def __init__(self) -> None:
+    def __init__(self, cfg: dict[str, Any] = CFG) -> None:
         self.clock = FakeClock()
         self.sent: list[tuple[str, dict[str, Any]]] = []
         self.hooks: list[tuple[str, str, str | None]] = []
+        self.suppressed: list[tuple[str, str, str]] = []
         self.am = AlertManager(
-            CFG,
+            cfg,
             self.publish,
             self.clock,
             on_follow_up=self.hook("follow_up"),
             on_emergency=self.hook("emergency"),
             on_alarm=self.hook("alarm"),
+            on_suppress=lambda kind, tier, why: self.suppressed.append((kind, tier, why)),
         )
 
     def publish(self, topic: str, data: dict[str, Any]) -> None:
@@ -330,3 +334,111 @@ def test_idle_manager_ignores_voice_messages(rig: Rig) -> None:
     rig.am.on_voice_reply({"alert_id": "a-x", "intent": "OK"})
     rig.am.tick()
     assert rig.sent == []
+
+
+def test_audio_key_only_with_the_original_text(rig: Rig) -> None:
+    alert = rig.am.submit("drowsiness", "T2", "Break?", audio_key="drowsiness_en_1")
+    assert alert is not None
+    assert rig.says()[0]["audio_key"] == "drowsiness_en_1"
+    rig.reply(alert, "UNCLEAR")
+    rig.advance(GAP)
+    assert "audio_key" not in rig.says()[1]  # the repeat uses other words
+
+
+# Genuine T3 vs escalated T3 (17:12 demo: a microsleep waited 22 s behind an escalation)
+
+
+def test_genuine_t3_preempts_an_escalated_alert(rig: Rig) -> None:
+    distraction = submit(rig)  # T2
+    rig.reply(distraction, "NONE", "")
+    rig.advance(GAP)
+    rig.reply(distraction, "NONE", "")
+    rig.advance(GAP)
+    assert distraction.tier == "T3" and rig.am.active is distraction  # escalated
+    micro = submit(rig, "microsleep", "T3")
+    assert rig.am.active is micro and rig.says()[-1]["alert_id"] == micro.alert_id
+    assert distraction in rig.am.queue  # resumes after the microsleep
+    rig.reply(micro, "OK")
+    rig.advance(GAP)
+    assert rig.am.active is distraction
+
+
+# LEAD-T14: rate limits and cooldowns (AL-02), with the real config values
+
+
+@pytest.fixture
+def limited() -> Rig:
+    return Rig(RATE_CFG)
+
+
+def finish(rig: Rig, alert: Alert) -> None:
+    rig.reply(alert, "OK")
+    rig.advance(GAP)
+
+
+def test_one_non_critical_prompt_per_interval(limited: Rig) -> None:
+    first = submit(limited, "distraction", "T2")
+    finish(limited, first)
+    assert limited.am.submit("phone", "T2", "Phone?") is None
+    assert limited.suppressed == [
+        ("phone", "T2", f"one non-critical prompt per {RATE_CFG['noncritical_min_interval_s']} s")
+    ]
+    limited.advance(RATE_CFG["noncritical_min_interval_s"])
+    assert limited.am.submit("phone", "T2", "Phone?") is not None
+
+
+def test_one_t1_per_five_minutes(limited: Rig) -> None:
+    finish(limited, submit(limited, "checkin_due", "T1"))
+    limited.advance(RATE_CFG["noncritical_min_interval_s"])  # the 2 min limit has passed
+    assert limited.am.submit("zoning_out", "T1", "Trivia?") is None
+    assert "one T1 per" in limited.suppressed[-1][2]
+    t2 = limited.am.submit("distraction", "T2", "Focus?")
+    assert t2 is not None  # a T2 is not held by the T1 limit
+    finish(limited, t2)
+    limited.advance(RATE_CFG["t1_min_interval_s"])
+    assert limited.am.submit("zoning_out", "T1", "Trivia?") is not None
+
+
+def test_per_type_cooldown(limited: Rig) -> None:
+    finish(limited, submit(limited, "drowsiness", "T2"))
+    limited.advance(RATE_CFG["noncritical_min_interval_s"])  # global limit passed
+    assert limited.am.submit("drowsiness", "T2", "Break?") is None  # 5 min cooldown
+    cooldown = RATE_CFG["cooldown_s"]["drowsiness"]
+    assert limited.suppressed[-1][2] == f"drowsiness cooldown {cooldown} s"
+    limited.advance(RATE_CFG["cooldown_s"]["drowsiness"])
+    assert limited.am.submit("drowsiness", "T2", "Break?") is not None
+
+
+def test_t3_is_never_limited(limited: Rig) -> None:
+    first = submit(limited, "microsleep", "T3")
+    finish(limited, first)
+    assert limited.am.submit("microsleep", "T3", "Awake?") is not None
+    finish(limited, limited.am.active)
+    finish(limited, submit(limited, "distraction", "T2"))
+    assert limited.am.submit("crash_candidate", "T3", "Okay?") is not None  # right after a T2
+    assert limited.suppressed == []
+
+
+def test_repeats_and_escalations_are_not_limited(limited: Rig) -> None:
+    alert = submit(limited, "distraction", "T2")
+    for _ in range(3):
+        limited.reply(alert, "NONE", "")
+        limited.advance(GAP)
+    assert [s["tier"] for s in limited.says()] == ["T2", "T2", "T3", "T3"]
+    assert limited.suppressed == []
+
+
+def test_suppressed_alerts_are_never_spoken(limited: Rig) -> None:
+    finish(limited, submit(limited, "distraction", "T2"))
+    before = len(limited.says())
+    limited.am.submit("no_face", "T2", "Okay?")
+    limited.advance(GAP)
+    assert len(limited.says()) == before
+    assert all(d["type"] != "no_face" for t, d in limited.sent if t == "alert.state")
+
+
+def test_demo_profile_shortens_the_limits() -> None:
+    demo = load_config("demo")["core"]["alerts"]
+    assert demo["noncritical_min_interval_s"] < RATE_CFG["noncritical_min_interval_s"]
+    assert demo["t1_min_interval_s"] < RATE_CFG["t1_min_interval_s"]
+    assert all(demo["cooldown_s"][k] <= v for k, v in RATE_CFG["cooldown_s"].items())
