@@ -1,12 +1,14 @@
 """DriveMate core process.
 
+    python -m backend.core.run          # live: UAH-DriveSet replay on vehicle.motion (LEAD-T08)
     python -m backend.core.run --fake
 
 --fake (LEAD-T06) publishes a synthetic drive on vehicle.motion at 10 Hz (source "sim") and
 cycles one alert every core.fake.alert_every_s through queued, speaking, listening and closed,
 with voice.say, control.music and checkin.schedule, so voice and the dashboard have a partner.
 A voice.reply for the active alert closes it; otherwise it closes after listen_s + reply_grace_s.
-The live core (vehicle replay, Alert Manager) arrives with LEAD-T08 and LEAD-T10.
+Live mode replays UAH-DriveSet (backend/core/vehicle.py) and obeys control.replay; without the
+dataset it falls back to the synthetic drive. The Alert Manager arrives with LEAD-T10.
 """
 
 from __future__ import annotations
@@ -21,8 +23,12 @@ import time
 import uuid
 from typing import Any
 
+from pydantic import ValidationError
+
 from backend.bus.client import BusClient
 from backend.config import get_config
+from backend.core.vehicle import Player, load_trips
+from backend.schemas import validate
 
 log = logging.getLogger("core")
 
@@ -80,15 +86,11 @@ class FakeCore:
             tasks.create_task(self.alert_loop())
 
     async def vehicle_loop(self) -> None:
-        period = 1.0 / self.rate_hz
         started = time.monotonic()
-        next_tick = started
-        while True:
-            await self.bus.publish(
-                "vehicle.motion", vehicle_sample(time.monotonic() - started, self.fake["speed_kmh"])
-            )
-            next_tick += period
-            await asyncio.sleep(max(0.0, next_tick - time.monotonic()))
+        speed = self.fake["speed_kmh"]
+        await publish_at_rate(
+            self.bus, self.rate_hz, lambda: vehicle_sample(time.monotonic() - started, speed)
+        )
 
     async def publish_schedule(self) -> None:
         interval = self.checkin["base_interval_min"]
@@ -152,15 +154,56 @@ class FakeCore:
             self.replies.pop(alert_id, None)
 
 
+async def publish_at_rate(bus: BusClient, rate_hz: float, next_sample: Any) -> None:
+    """Publish next_sample() on vehicle.motion at rate_hz without drifting."""
+    period = 1.0 / rate_hz
+    next_tick = time.monotonic()
+    while True:
+        await bus.publish("vehicle.motion", next_sample())
+        next_tick += period
+        await asyncio.sleep(max(0.0, next_tick - time.monotonic()))
+
+
+async def run_live(bus: BusClient, cfg: dict[str, Any]) -> None:
+    vehicle = cfg["core"]["vehicle"]
+    trips = load_trips(vehicle)
+    if trips:
+        player = Player(trips, vehicle["default_trip"], vehicle["loop"])
+
+        def on_replay(envelope: dict[str, Any]) -> None:
+            try:
+                validate("control.replay", envelope["data"])
+            except (ValidationError, KeyError) as error:
+                log.warning("ignored bad control.replay: %s", error)
+                return
+            player.control(envelope["data"])
+
+        bus.subscribe(["control.replay"], on_replay)
+        next_sample = player.step
+    else:
+        log.warning("no UAH-DriveSet trips found; publishing the synthetic drive (source sim)")
+        started = time.monotonic()
+        speed = cfg["core"]["fake"]["speed_kmh"]
+
+        def next_sample() -> dict[str, Any]:
+            return vehicle_sample(time.monotonic() - started, speed)
+
+    await bus.connect()
+    log.info("core live connected to %s", bus.url)
+    await publish_at_rate(bus, vehicle["rate_hz"], next_sample)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="DriveMate core process")
     parser.add_argument("--fake", action="store_true", help="synthetic vehicle and alert cycle")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
-    if not args.fake:
-        parser.exit(2, "core live mode arrives with LEAD-T08/T10; run with --fake for now.\n")
+    cfg = get_config()
     try:
-        asyncio.run(FakeCore(BusClient("core"), get_config()).run())
+        if args.fake:
+            asyncio.run(FakeCore(BusClient("core"), cfg).run())
+        else:
+            asyncio.run(run_live(BusClient("core"), cfg))
     except KeyboardInterrupt:
         pass
 
