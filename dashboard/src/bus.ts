@@ -1,9 +1,6 @@
-export interface Envelope<T = unknown> {
-  topic: string
-  ts: number
-  src: string
-  data: T
-}
+import type { Envelope } from './types'
+
+export type { Envelope } from './types'
 
 export interface SeriesPoint {
   ts: number
@@ -173,6 +170,6 @@ class BusStore {
   }
 }
 
-const defaultUrl = import.meta.env.VITE_BUS_URL || 'ws://localhost:8765/bus'
-export const bus = new BusStore(defaultUrl)
+export const busUrl = import.meta.env.VITE_BUS_URL || 'ws://localhost:8765/bus'
+export const bus = new BusStore(busUrl)
 bus.start()
