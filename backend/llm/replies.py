@@ -16,7 +16,7 @@ from . import client
 from .language import is_english
 
 PROMPTS = Path(__file__).resolve().parents[2] / "config" / "prompts"
-ALERT_FIELDS = ("event_type", "type", "tier", "signals", "trip_time", "preferences", "lang")
+ALERT_FIELDS = ("event_type", "type", "tier", "signals", "trip_time", "preferences", "lang", "firm")
 SPOKEN_INTENTS = set(get_args(Intent)) - {"NONE"}
 WORDS = re.compile(r"\b[^\W_]+(?:['’][^\W_]+)*\b")
 T = TypeVar("T")
