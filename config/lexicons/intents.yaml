@@ -1,0 +1,10 @@
+en:
+  OK: ["yes", "yeah", "sure", "ok", "okay", "fine", "I'm good"]
+  NOT_OK: ["tired", "not really", "no"]
+  HELP: ["help", "call someone"]
+  negation: ["not", "never", "don't", "can't", "isn't", "aren't", "wasn't", "weren't"]
+ro:
+  OK: ["da", "sigur", "bine", "sunt ok"]
+  NOT_OK: ["obosit", "obosită", "nu prea", "mă simt rău"]
+  HELP: ["ajutor", "sună"]
+  negation: ["nu", "nici", "niciodată"]

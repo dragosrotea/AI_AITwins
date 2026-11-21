@@ -13,13 +13,16 @@ from backend.bus.client import BusClient
 from backend.llm import classify_reply
 from backend.schemas import VoiceReply, VoiceSay, VoiceState, VoiceStatus
 
+from .intents import classify_keyword
 from .stt import SpeechToText
 from .tts import play_interruptible, synthesize
 
 ASSETS = Path(__file__).resolve().parents[2] / "assets" / "audio"
 FRAME_S = FRAME_MS / 1000
 END_SILENCE_S = 0.8
+TRAILING_FRAMES = 150 // FRAME_MS
 log = logging.getLogger(__name__)
+capture_log = logging.getLogger("backend.voice.capture")
 
 
 def read_clip(audio_key: str) -> bytes | None:
@@ -31,11 +34,12 @@ def read_clip(audio_key: str) -> bytes | None:
 
 
 async def capture_reply(
-    mic: Microphone, cursor: int, deadline: float
+    mic: Microphone, cursor: int, deadline: float, *, started_at: float
 ) -> tuple[bytes, float] | None:
     vad = Vad(2)
     frames: list[bytes] = []
-    speech_end: float | None = None
+    first_speech: float | None = None
+    last_speech: float | None = None
     speech_frames = 0
     silent_frames = 0
     while True:
@@ -47,20 +51,30 @@ async def capture_reply(
             cursor = frame.sequence
             frames.append(frame.pcm)
             if vad.is_speech(frame.pcm, SAMPLE_RATE):
-                speech_end = frame.ended_at
+                if first_speech is None:
+                    first_speech = frame.ended_at
+                last_speech = frame.ended_at
                 speech_frames = len(frames)
                 silent_frames = 0
-            elif speech_end is not None:
+            elif last_speech is not None:
                 silent_frames += 1
                 if silent_frames * FRAME_S >= END_SILENCE_S:
-                    return b"".join(frames[:speech_frames]), speech_end
+                    break
         remaining = deadline - perf_counter()
-        if remaining <= 0:
+        if remaining <= 0 or silent_frames * FRAME_S >= END_SILENCE_S:
             break
         await asyncio.sleep(min(FRAME_S, remaining))
-    if speech_end is None:
+    if first_speech is None or last_speech is None:
+        capture_log.info("VAD first_ms=none last_ms=none retained_ms=0 whisper_ms=skipped")
         return None
-    return b"".join(frames[:speech_frames]), speech_end
+    retained = frames[: speech_frames + TRAILING_FRAMES]
+    capture_log.info(
+        "VAD first_ms=%.0f last_ms=%.0f retained_ms=%d",
+        (first_speech - started_at) * 1000,
+        (last_speech - started_at) * 1000,
+        len(retained) * FRAME_MS,
+    )
+    return b"".join(retained), last_speech
 
 
 async def status(bus: BusClient, alert_id: str, state: VoiceState) -> None:
@@ -86,9 +100,16 @@ async def interact(
         await play_interruptible(chime)
 
         cursor = mic.cursor()
-        deadline = perf_counter() + alert.listen_s
+        started_at = perf_counter()
+        deadline = started_at + alert.listen_s
+        capture_log.info(
+            "Capture start monotonic_s=%.3f cursor=%d window_ms=%.0f",
+            started_at,
+            cursor,
+            alert.listen_s * 1000,
+        )
         await status(bus, alert.alert_id, "listening")
-        capture = await capture_reply(mic, cursor, deadline)
+        capture = await capture_reply(mic, cursor, deadline, started_at=started_at)
         if capture is None:
             reply = VoiceReply(
                 alert_id=alert.alert_id, transcript="", intent="NONE", latency_ms=0, path="keyword"
@@ -98,13 +119,19 @@ async def interact(
             result = await asyncio.get_running_loop().run_in_executor(
                 inference, stt.transcribe, pcm, alert.lang
             )
-            intent = await classify_reply(result.text, "confirmation")
+            capture_log.info("Whisper whisper_ms=%.0f", result.elapsed_ms)
+            intent = classify_keyword(result.text, alert.lang)
+            if intent is None:
+                intent = await classify_reply(result.text, "confirmation") or "UNCLEAR"
+                path = "llm"
+            else:
+                path = "keyword"
             reply = VoiceReply(
                 alert_id=alert.alert_id,
                 transcript=result.text,
-                intent=intent or "UNCLEAR",
+                intent=intent,
                 latency_ms=round((perf_counter() - speech_end) * 1000),
-                path="llm",
+                path=path,
             )
         await bus.publish("voice.reply", reply.model_dump())
     except Exception as error:
