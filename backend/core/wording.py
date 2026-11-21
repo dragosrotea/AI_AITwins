@@ -76,17 +76,29 @@ class AlertWriter:
         self.fallback = fallback or _default_fallback()
         self._next_variant: dict[str, int] = defaultdict(int)
 
-    async def write(self, kind: str, tier: str, ctx: dict[str, Any]) -> Wording:
+    async def write(
+        self,
+        kind: str,
+        tier: str,
+        ctx: dict[str, Any],
+        max_words: int | None = None,
+        variant: int | None = None,
+    ) -> Wording:
+        """max_words: a longer LLM line falls back to the template (RR-06: 20 for road rage).
+        variant: a fixed template variant instead of the rotation (the firm road-rage line)."""
         if tier != "T3":
             started = time.monotonic()
             text = await self._ask_llm(ctx)
             llm_ms = round((time.monotonic() - started) * 1000)
+            if text and max_words is not None and len(text.split()) > max_words:
+                log.info("%s: LLM line has %d words (max %d)", kind, len(text.split()), max_words)
+                text = None
             if text:
                 return Wording(text, "en", "llm", llm_ms=llm_ms)
-            log.info("%s: LLM gave nothing in %d ms, using a template", kind, llm_ms)
+            log.info("%s: no usable LLM line in %d ms, using a template", kind, llm_ms)
         else:
             llm_ms = None
-        return self._template(kind, llm_ms)
+        return self._template(kind, llm_ms, variant)
 
     async def _ask_llm(self, ctx: dict[str, Any]) -> str | None:
         try:
@@ -98,10 +110,13 @@ class AlertWriter:
             return None
         return text.strip() if isinstance(text, str) and text.strip() else None
 
-    def _template(self, kind: str, llm_ms: int | None) -> Wording:
+    def _template(self, kind: str, llm_ms: int | None, fixed: int | None = None) -> Wording:
         """Next catalog variant for this type (1, 2, 3, 1, ...), else the built-in line."""
-        variant = self._next_variant[kind] % VARIANTS + 1
-        self._next_variant[kind] += 1
+        if fixed is not None:
+            variant = fixed
+        else:
+            variant = self._next_variant[kind] % VARIANTS + 1
+            self._next_variant[kind] += 1
         for attempt in (variant, 1):  # 1 again if the catalog has fewer variants
             try:
                 entry = self.fallback(kind, attempt)

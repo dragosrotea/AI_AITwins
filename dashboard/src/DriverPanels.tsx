@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
+import LiquidGlass from 'liquid-glass-react'
 import { bus } from './bus'
-import type { AlertState, CheckinSchedule, Pretrip, TopicEnvelope } from './types'
+import type { AlertState, CheckinSchedule, Pretrip, TopicEnvelope, VoiceStatus } from './types'
 
 function useBusUpdates() {
   const [, setRevision] = useState(0)
@@ -21,7 +22,7 @@ function useBusUpdates() {
   }, [])
 }
 
-function latest<K extends 'alert.state' | 'voice.say' | 'checkin.schedule' | 'vehicle.motion'>(topic: K) {
+function latest<K extends 'alert.state' | 'voice.say' | 'voice.status' | 'checkin.schedule' | 'vehicle.motion'>(topic: K) {
   return bus.getLatest(topic) as TopicEnvelope<K> | undefined
 }
 
@@ -69,31 +70,53 @@ export function DriverStatusPanel() {
     TIER_RANK[b.data.tier] - TIER_RANK[a.data.tier] || b.ts - a.ts,
   )[0]
   const say = latest('voice.say')
-  const spokenText = alert
-    ? alert.data.text || (say?.data.alert_id === alert.data.alert_id ? say.data.text : '')
-    : 'DriveMate is monitoring your drive.'
+  const voiceStatus = latest('voice.status')?.data as VoiceStatus | undefined
+  const voiceIsActive = voiceStatus?.state === 'speaking' || voiceStatus?.state === 'listening'
+  const voiceMatchesAlert = !alert || !voiceStatus?.alert_id || voiceStatus.alert_id === alert.data.alert_id
+  const sayMatchesVoice = Boolean(voiceIsActive && voiceMatchesAlert && (!voiceStatus?.alert_id || say?.data.alert_id === voiceStatus.alert_id))
+  const spokenText = alert?.data.text || (sayMatchesVoice ? say?.data.text : undefined) || 'DriveMate is monitoring your drive.'
+  const isSpeaking = voiceStatus?.state === 'speaking' && voiceMatchesAlert
+  const voiceActivity = voiceMatchesAlert && voiceIsActive ? voiceStatus?.state : undefined
   const schedule = latest('checkin.schedule')?.data as CheckinSchedule | undefined
   const remaining = schedule ? Math.ceil(schedule.next_checkin_ts - now) : undefined
   const level = !alert ? 'clear' : alert.data.tier === 'T1' ? 'caution' : 'urgent'
   const statusLabel = level === 'clear' ? 'ALL CLEAR' : level === 'caution' ? 'CAUTION' : 'ATTENTION REQUIRED'
 
   return (
-    <section className={`driver-status-card driver-status-card--${level}`} aria-label="Driver safety status">
-      <div className="driver-status-topline">
-        <span className="driver-status-indicator" aria-hidden="true" />
-        <span>{statusLabel}</span>
-        {alert && <strong>{alert.data.tier} · {alert.data.type.replaceAll('_', ' ')}</strong>}
-      </div>
-      <p className="driver-status-message" aria-live="polite">{spokenText}</p>
-      <div className="driver-next-checkin">
-        <span>NEXT CHECK-IN</span>
-        <strong>
-          {remaining === undefined
-            ? 'Waiting for schedule'
-            : remaining <= 0 ? 'Due now' : formatCountdown(remaining)}
-        </strong>
-      </div>
-    </section>
+    <LiquidGlass
+      className="driver-liquid-glass"
+      style={{ width: '100%' }}
+      cornerRadius={24}
+      padding="0"
+      displacementScale={18}
+      blurAmount={0.025}
+      saturation={125}
+      aberrationIntensity={0.5}
+      elasticity={0.04}
+      overLight
+    >
+      <section className={`driver-status-card driver-status-card--${level}${isSpeaking ? ' driver-status-card--speaking' : ''}`} aria-label="Driver safety status">
+        <div className="driver-status-topline">
+          <span className="driver-status-indicator" aria-hidden="true" />
+          <span>{statusLabel}</span>
+          {voiceActivity && (
+            <span className={`driver-voice-indicator${isSpeaking ? ' driver-voice-indicator--speaking' : ''}`} role="status" aria-label={isSpeaking ? 'DriveMate is speaking' : 'DriveMate is listening'}>
+              <span className="driver-voice-wave" aria-hidden="true"><i /><i /><i /></span>
+              {isSpeaking ? 'Speaking' : 'Listening'}
+            </span>
+          )}
+        </div>
+        <p className="driver-status-message" aria-live="polite">{spokenText}</p>
+        <div className="driver-next-checkin">
+          <span>NEXT CHECK-IN</span>
+          <strong>
+            {remaining === undefined
+              ? 'Waiting for schedule'
+              : remaining <= 0 ? 'Due now' : formatCountdown(remaining)}
+          </strong>
+        </div>
+      </section>
+    </LiquidGlass>
   )
 }
 

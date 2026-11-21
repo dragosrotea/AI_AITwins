@@ -38,6 +38,16 @@ def test_config_has_live_camera_and_eye_settings() -> None:
     assert settings["eye_state"]["max_model_size_bytes"] == 5_000_000
 
 
+def test_cv_settings_apply_demo_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DRIVEMATE_PROFILE", "demo")
+
+    settings = load_cv_settings()
+
+    assert settings["yawn_window_s"] == 120
+    assert settings["zoning"]["window_s"] == 30
+    assert settings["zoning_stare_s"] == 30
+
+
 def test_fake_camera_frame_is_valid_contract_sized_jpeg() -> None:
     import cv2
 

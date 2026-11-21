@@ -1,9 +1,9 @@
-"""Detector events to alerts: CV visual event routing (LEAD-T11, LEAD-T15).
+"""Route CV visual events, Core fusion events, and eligible trivia alerts.
 
 A CV detector.event becomes an alert at the tier from config core.routing.tiers: core decides
 the tier, whatever tier the event carries (a mismatch is logged). Drowsiness and microsleep
-first cancel queued trivia (core.routing.cancels, DD-04). Types without a tier or template are
-logged and skipped, and core's own fusion events (src "core") are ignored so they never loop.
+first cancel queued trivia (core.routing.cancels, DD-04). Core events use fusion_tiers.
+CV zoning_out uses the T1 engagement route and checks trip and road eligibility.
 
 The spoken text comes from AlertWriter (LEAD-T13): the LLM for T1/T2, else the voice engineer's
 catalog. TEMPLATES below are the last-resort lines and supply the short repeat text (VR-05).
@@ -58,6 +58,18 @@ TEMPLATES: dict[str, dict[str, tuple[str, str]]] = {
         "en": ("The phone can wait until we stop. Can you leave it for now?", "Can it wait?"),
         "ro": ("Telefonul poate aștepta până oprim. Îl lași deocamdată?", "Poate aștepta?"),
     },
+    "road_rage": {  # RR-06: calm, non-judgmental, at most 20 words (from core's fusion, T17)
+        "en": ("That sounded stressful. Shall we take a slow breath together?", "Are you okay?"),
+        "ro": ("A fost un moment tensionat. Respirăm adânc împreună?", "Ești bine?"),
+    },
+    "checkin_due": {  # CI-05, LEAD-T20
+        "en": ("Quick check-in. How are you feeling right now?", "How are you feeling?"),
+        "ro": ("Verificare rapidă. Cum te simți acum?", "Cum te simți?"),
+    },
+    "break_due": {  # CI-03, LEAD-T20
+        "en": ("Time for a short break. Can you stop somewhere safe soon?", "Can we stop soon?"),
+        "ro": ("E timpul pentru o pauză scurtă. Poți opri undeva în siguranță?", "Oprim curând?"),
+    },
     "no_face": {  # CV-06
         "en": ("I can't see you at the moment. Is everything okay?", "Are you okay?"),
         "ro": ("Nu te mai văd în acest moment. Este totul în regulă?", "Ești bine?"),
@@ -104,17 +116,22 @@ class EventRouter:
         )
 
     async def handle(self, envelope: dict[str, Any]) -> Alert | None:
-        if envelope.get("src") != "cv":
-            return None
         data = envelope["data"]
         kind = data["type"]
-        is_engagement = kind == "zoning_out"
-        tier = "T1" if is_engagement else self.routing["tiers"].get(kind)
+        # CV's visual events, and core's own fusion events (road_rage, LEAD-T18); core never
+        # routes anything else of its own, so no event can loop.
+        source = envelope.get("src")
+        sources = {"cv": self.routing["tiers"], "core": self.routing["fusion_tiers"]}
+        is_engagement = source == "cv" and kind == "zoning_out"
+        tier = "T1" if is_engagement else sources.get(source, {}).get(kind)
         if tier is None or (not is_engagement and kind not in TEMPLATES):
-            log.info("detector.event %s from cv: no route, skipped", kind)
+            if source == "cv":
+                log.info("detector.event %s from cv: no route, skipped", kind)
             return None
         if data["tier"] != tier:
-            log.info("detector.event %s: cv says %s, routing uses %s", kind, data["tier"], tier)
+            log.info(
+                "detector.event %s: %s says %s, routing uses %s", kind, source, data["tier"], tier
+            )
         cancels = self.routing["cancels"].get(kind, [])
         if cancels:
             self._engagement_epoch += 1
@@ -131,8 +148,16 @@ class EventRouter:
         try:
             if is_engagement:
                 return await self._engage(data)
-            ctx = {"event_type": kind, "tier": tier, "signals": data.get("signals", {})}
-            wording = await self.writer.write(kind, tier, ctx)
+            signals_in = data.get("signals", {})
+            firm = bool(signals_in.get("firm"))  # RR-05: score >= 85
+            ctx = {"event_type": kind, "tier": tier, "signals": signals_in, "firm": firm}
+            wording = await self.writer.write(
+                kind,
+                tier,
+                ctx,
+                max_words=self.routing["max_words"].get(kind),
+                variant=self.routing["firm_variant"].get(kind) if firm else None,
+            )
         finally:
             self._wording.discard(kind)
         _text, short = TEMPLATES[kind]["en"]

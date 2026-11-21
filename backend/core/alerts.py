@@ -127,14 +127,16 @@ class AlertManager:
         signals: dict[str, Any] | None = None,
         lang: str | None = None,
         audio_key: str | None = None,
+        bypass_limits: bool = False,
         engagement_answer: str | None = None,
     ) -> Alert | None:
         """Queue an alert. Returns None if one of the same type is already queued or active,
-        or a rate limit holds it back (AL-02)."""
+        or a rate limit holds it back (AL-02). bypass_limits is for answers to the driver
+        (a break offered after "I'm tired"), which are not unsolicited prompts."""
         if any(a.type == type for a in self.pending()):
             log.info("drop %s %s: one is already queued or active", tier, type)
             return None
-        reason = self.blocked(type, tier)
+        reason = None if bypass_limits else self.blocked(type, tier)
         if reason is not None:
             self.suppressed(type, tier, reason)
             return None
@@ -279,11 +281,10 @@ class AlertManager:
         self.active = alert
         if first:
             alert.spoken = alert.text
-        level = (
-            self.cfg["t3_music_level"]
-            if alert.tier == "T3"
-            else self.cfg["music_duck_volume"] / 100
-        )
+        if alert.tier == "T3":
+            level = self.cfg["t3_music_level"]
+        else:  # per type first: road rage only lowers the music by 30% (RR-06)
+            level = self.cfg["duck_level"].get(alert.type, self.cfg["music_duck_volume"] / 100)
         self.publish("control.music", {"duck": True, "level": level})
         alert.deadline = (
             self.clock()

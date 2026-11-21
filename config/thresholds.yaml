@@ -26,6 +26,8 @@ core:
     slow_reply_s: 3                # VR-07: two slow replies in a row raise fatigue
     music_duck_volume: 20          # 0-100 while speaking and listening (T1, T2)
     t3_music_level: 0.0            # T3: music muted (tier table, requirements section 4)
+    duck_level:                    # per type, overrides music_duck_volume (0-1)
+      road_rage: 0.7               # RR-06: lower the music by 30%, then speak
     speak_max_s: 15                # longest wait for voice to finish speaking before counting
     voice_gap_s: 0.5               # pause before the next voice.say: voice drops non-T3 while busy
     default_lang: en               # until control.trip sets the driver's language
@@ -79,6 +81,7 @@ core:
     event_shorten: 0.30            # CI-04
     quiet_min: 30                  # CI-04
     quiet_lengthen: 0.20           # CI-04
+    retry_s: 30                    # LEAD-T20: a check-in held back by AL-02 tries again after this
   crash:
     spike_g: 4.0                   # CR-01
     stop_speed_kmh: 5              # CR-01
@@ -104,6 +107,12 @@ core:
     cancels:                       # DD-04: tired drivers get a break, not a game
       drowsiness: [zoning_out]
       microsleep: [zoning_out]
+    fusion_tiers:                  # core's own detector.event types (LEAD-T17/T18)
+      road_rage: T2
+    max_words:                     # tighter than the LLM's own 25-word check
+      road_rage: 20                # RR-06
+    firm_variant:                  # template variant for firm messages (RR-05, score >= 85)
+      road_rage: 3                 # "If you need a breather, can you pull over somewhere safe?"
   triplog:                         # LEAD-T12, AL-04: one JSONL file per trip, kept local
     dir: logs
     topics: [detector.event, alert.state, voice.say, voice.status, voice.reply, control.music,
@@ -162,6 +171,25 @@ cv:
   gaze_window_s: 30                # CV-05
   blink_window_s: 60               # CV-05
   yawn_window_s: 600               # CV-05
+  yawn_fallback:
+    rate_hz: 10
+    score_threshold: 0.65
+    mouth_aspect_threshold: 0.55
+    hold_s: 0.8
+    cooldown_s: 2.5
+  anger_fallback:
+    rate_hz: 5
+    smoothing_alpha: 0.2
+    weights_brow: 0.35
+    weights_mouth: 0.45
+    weights_nose: 0.2
+  zoning:
+    window_s: 60
+    gaze_dispersion_deg: 2.0
+    population_blink_rate_pm: 18
+    low_blink_ratio: 0.6
+    head_movement_deg: 8
+    weights: {gaze: 0.45, blink: 0.25, head: 0.30}
   no_face_notice_s: 2              # CV-06
   no_face_warning_s: 5             # CV-06
   eyes_off_yaw_deg: 30             # DD-01
@@ -190,6 +218,19 @@ ui:
   accel_window_s: 60               # DB-02
   harsh_marker_g: 0.4              # DB-02
   form_lock_speed_kmh: 5           # CI-06, NF-07
+  attention:
+    score_formula: "100 - 100 * weighted_sum(normalized drowsiness, distraction, rage, zoning risks)"
+    weights: {drowsiness: 0.35, distraction: 0.30, rage: 0.20, zoning: 0.15}
+    perclos_full_risk: 0.15        # DD-03
+    yaw_full_risk_deg: 30          # DD-01
+    pitch_down_full_risk_deg: 20   # DD-01
+    gaze_dispersion_full_risk_deg: 30
+    yawns_full_risk: 3             # DD-03
+    anger_cue_threshold: 0.5       # DB-04
+    music_rise_delta: 10            # volume points within cue_window_s
+    music_low_volume: 25            # volume points
+    zoning_cue_threshold: 0.6
+    cue_window_s: 30                # DB-04
 
 profiles:
   # 5-minute demo: effects must show within a minute or so.
@@ -224,3 +265,5 @@ profiles:
       perclos_window_s: 30         # DD-03: show within 60 s in demo mode
       yawn_window_s: 120
       zoning_stare_s: 30           # ZO-01: fixed stare for 30 s in demo mode
+      zoning:
+        window_s: 30
