@@ -26,6 +26,8 @@ manual_mrl() {
 MRL Eye Dataset is not downloaded automatically.
 1. Review the dataset terms and current download instructions at:
    http://mrl.cs.vsb.cz/eyedataset
+   If this legacy URL redirects to the MRL homepage, request the current archive
+   from the lab; do not substitute an unverified mirror.
 2. Download the dataset from the official source.
 3. Extract it under: $RAW_DIR/mrl_eye
 4. Inspect the extracted subject and eye-state naming before training.
@@ -123,8 +125,8 @@ case "$1" in
     manual_mrl
     manual_yawdd
     manual_dmd
-    download_fer2013
     download_mediapipe
+    download_fer2013
     ;;
   status) show_status ;;
   -h|--help) usage ;;

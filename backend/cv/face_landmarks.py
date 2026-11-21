@@ -11,6 +11,7 @@ class LandmarkResult:
     face_present: bool
     landmarks: list[Any]
     blendshapes: dict[str, float]
+    transformation_matrix: list[list[float]] | None
     timestamp_ms: int
 
 
@@ -29,10 +30,20 @@ class FaceLandmarker:
         self.presence_confidence = presence_confidence
         self.tracking_confidence = tracking_confidence
         self._landmarker: Any | None = None
-        self._BaseOptions: Any | None = None
-        self._FaceLandmarker: Any | None = None
+        self._mediapipe: Any | None = None
+        self._cv2: Any | None = None
+        self._last_timestamp_ms = 0
 
     def open(self) -> None:
+        if self.num_faces < 1:
+            raise ValueError("num_faces must be positive")
+        for value in (
+            self.detection_confidence,
+            self.presence_confidence,
+            self.tracking_confidence,
+        ):
+            if not 0.0 <= value <= 1.0:
+                raise ValueError("MediaPipe confidence thresholds must be between 0 and 1")
         if not self.model_path.is_file():
             raise RuntimeError(
                 f"Face landmarker model missing: {self.model_path}. "
@@ -42,13 +53,14 @@ class FaceLandmarker:
             import mediapipe as mp
         except ImportError as exc:
             raise RuntimeError("MediaPipe is required: python3 -m pip install mediapipe") from exc
+        try:
+            import cv2
+        except ImportError as exc:
+            raise RuntimeError("OpenCV is required: python3 -m pip install opencv-python") from exc
 
-        options_module = mp.tasks
-        self._BaseOptions = options_module.BaseOptions
-        self._FaceLandmarker = options_module.vision.FaceLandmarker
-        vision = options_module.vision
+        vision = mp.tasks.vision
         options = vision.FaceLandmarkerOptions(
-            base_options=self._BaseOptions(model_asset_path=str(self.model_path)),
+            base_options=mp.tasks.BaseOptions(model_asset_path=str(self.model_path)),
             running_mode=vision.RunningMode.VIDEO,
             num_faces=self.num_faces,
             min_face_detection_confidence=self.detection_confidence,
@@ -57,29 +69,53 @@ class FaceLandmarker:
             output_face_blendshapes=True,
             output_facial_transformation_matrixes=True,
         )
-        self._landmarker = self._FaceLandmarker.create_from_options(options)
+        self._landmarker = vision.FaceLandmarker.create_from_options(options)
+        self._mediapipe = mp
+        self._cv2 = cv2
 
     def close(self) -> None:
         if self._landmarker is not None:
             self._landmarker.close()
             self._landmarker = None
+            self._mediapipe = None
+            self._cv2 = None
 
     def process(self, bgr_frame: Any) -> LandmarkResult:
         if self._landmarker is None:
             raise RuntimeError("FaceLandmarker is not open")
-        mp = __import__("mediapipe")
+        if self._mediapipe is None or self._cv2 is None:
+            raise RuntimeError("FaceLandmarker dependencies were not initialized")
+        mp = self._mediapipe
         rgb_frame = mp.Image(
             image_format=mp.ImageFormat.SRGB,
-            data=__import__("cv2").cvtColor(bgr_frame, __import__("cv2").COLOR_BGR2RGB),
+            data=self._cv2.cvtColor(bgr_frame, self._cv2.COLOR_BGR2RGB),
         )
-        timestamp_ms = int(time.monotonic() * 1000)
+        timestamp_ms = max(int(time.monotonic() * 1000), self._last_timestamp_ms + 1)
+        self._last_timestamp_ms = timestamp_ms
         result = self._landmarker.detect_for_video(rgb_frame, timestamp_ms)
 
         if not result.face_landmarks:
-            return LandmarkResult(False, [], {}, timestamp_ms)
+            return LandmarkResult(False, [], {}, None, timestamp_ms)
 
         blendshapes: dict[str, float] = {}
         if result.face_blendshapes:
             for category in result.face_blendshapes[0]:
                 blendshapes[category.category_name] = float(category.score)
-        return LandmarkResult(True, list(result.face_landmarks[0]), blendshapes, timestamp_ms)
+        transformation_matrix = None
+        if result.facial_transformation_matrixes:
+            matrix = result.facial_transformation_matrixes[0]
+            get_data = getattr(matrix, "get_data", None)
+            if callable(get_data):
+                matrix = get_data()
+            if hasattr(matrix, "tolist"):
+                matrix = matrix.tolist()
+            if len(matrix) != 4 or any(len(row) != 4 for row in matrix):
+                raise ValueError("MediaPipe returned a face transformation matrix that is not 4x4")
+            transformation_matrix = [[float(value) for value in row] for row in matrix]
+        return LandmarkResult(
+            True,
+            list(result.face_landmarks[0]),
+            blendshapes,
+            transformation_matrix,
+            timestamp_ms,
+        )

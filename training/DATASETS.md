@@ -4,7 +4,7 @@ Store local dataset copies under `data/raw/`; those files are excluded from git.
 
 | Purpose | Source | Licence or terms | Local status and size | Download method |
 |---|---|---|---:|---|
-| Eye-state training | [MRL Eye Dataset](http://mrl.cs.vsb.cz/eyedataset) | Follow the terms published by MRL; verify permitted use before training | Not present in this checkout | Manual download after reviewing the official page (`mrl`) |
+| Eye-state training | [MRL Eye Dataset](http://mrl.cs.vsb.cz/eyedataset) | Follow the terms published by MRL; verify permitted use before training | Not present; the legacy URL currently redirects to the MRL homepage | Manual download after reviewing the official page (`mrl`) |
 | Yawn training/evaluation | [YawDD](https://ieee-dataport.org/open-access/yawdd-yawning-detection-dataset) | IEEE DataPort terms; the dataset page describes research use and restricts public screenshots based on participant permissions | Not present in this checkout | Free IEEE DataPort account and manual download (`yawdd`) |
 | Expression training | [FER2013](https://www.kaggle.com/datasets/msambare/fer2013) | Verify the dataset licence and Kaggle terms at download time | Not present in this checkout | Kaggle CLI after account and licence review (`fer2013`) |
 | Distraction/drowsiness evaluation | [DMD](https://dmd.vicomtech.org/#Download) | Creative Commons Attribution-NonCommercial-NoDerivatives 4.0; approved access terms apply | Present locally; approximately 5.5 GiB | Manual access request for new copies (`dmd`) |
@@ -39,7 +39,8 @@ data/raw/
   yawdd/
   fer2013/
   dmd/
-  age_detection_faces/
+  age_detection/
+  emotion_detection/
   syndd1/
 ```
 
@@ -49,6 +50,24 @@ Inspect these directories after download:
 find data/raw -maxdepth 2 -type f | sort | head -20
 find data/raw -mindepth 1 -maxdepth 1 -type d | sort
 ```
+
+## Eye-state model (CV-T07)
+
+After downloading and extracting the MRL Eye Dataset to `data/raw/mrl_eye/`,
+inspect the printed subject directories and sample filenames, then train and
+validate on held-out subjects:
+
+```bash
+python3 -m pip install -r training/requirements.txt
+python3 -m training.eye_state.train
+```
+
+The trainer uses the filename's subject and eye-state fields for an
+approximately 80/20 person-level split, uses the same grayscale 64x64
+preprocessor as the live camera, exports `models/eye_state.onnx`, and prints
+held-out closed-eye precision, recall, model size, and CPU inference latency.
+It refuses to claim metrics when MRL data is missing or the split lacks both
+eye classes.
 
 ## Training the four-model pipeline
 

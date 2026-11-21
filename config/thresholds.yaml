@@ -1,6 +1,7 @@
 cv:
   camera:
     index: 0
+    max_index: 10
     capture_width: 1280
     capture_height: 720
     process_width: 640
@@ -16,6 +17,24 @@ cv:
     detection_confidence: 0.5
     presence_confidence: 0.5
     tracking_confidence: 0.5
+    pitch_sign: -1.0
+  eye_state:
+    model_path: models/eye_state.onnx
+    closed_probability_threshold: 0.5
+    use_ear_fallback: true
+    ear_closed_threshold: 0.18
+    ear_open_threshold: 0.23
+    crop_padding_fraction: 0.25
+    input_size: 64
+    training_validation_fraction: 0.2
+    training_seed: 42
+    max_model_size_bytes: 5000000
+    max_inference_ms_per_eye: 3.0
+  preview:
+    rate_hz: 5
+    width: 320
+    jpeg_quality: 80
+    draw_landmarks: false
 voice:
   # null uses the system default. Use an index from --list-devices to override.
   input_device: null
