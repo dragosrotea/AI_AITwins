@@ -14,6 +14,7 @@ from typing import Any
 
 from backend.bus.client import ThreadPublisher
 from backend.cv.camera import CameraCapture, CameraConfig, list_cameras
+from backend.cv.emotion import EmotionModel
 from backend.cv.eye_crops import crop_eyes
 from backend.cv.eye_state import EyeStateModel
 from backend.cv.face_landmarks import FaceLandmarker
@@ -311,6 +312,8 @@ def _driver_data(
     *,
     state_metrics: DriverStateMetrics | None = None,
     timestamp: float | None = None,
+    last_eye_closed_p: float = 0.0,
+    anger_probability: float | None = None,
 ) -> dict[str, object]:
     data = _empty_driver_data(fps)
     if not result.face_present:
@@ -329,13 +332,27 @@ def _driver_data(
     if blink:
         log.debug("Eye blink detected")
     if eye_model is not None:
-        eye_crops = crop_eyes(
-            frame,
-            result.landmarks,
-            padding_fraction=float_setting(settings, "eye_state", "crop_padding_fraction"),
-            output_size=64,
-        )
-        eye_closed_p, _ = eye_model.predict(eye_crops)
+        try:
+            eye_crops = crop_eyes(
+                frame,
+                result.landmarks,
+                padding_fraction=float_setting(settings, "eye_state", "crop_padding_fraction"),
+                output_size=64,
+            )
+            eye_closed_p, _ = eye_model.predict(eye_crops)
+        except Exception:
+            # A turned-away or partially cropped face can produce degenerate
+            # eye regions. Use the geometric fallback for this frame so stale
+            # probabilities do not accumulate into a false microsleep alert.
+            log.debug("Eye crop/model unavailable; using EAR fallback", exc_info=True)
+            try:
+                eye_closed_p = _closed_probability_from_ear(
+                    geometry.eye_aspect_ratio,
+                    float_setting(settings, "eye_state", "ear_closed_threshold"),
+                    float_setting(settings, "eye_state", "ear_open_threshold"),
+                )
+            except (ValueError, ArithmeticError):
+                eye_closed_p = last_eye_closed_p
     else:
         eye_closed_p = _closed_probability_from_ear(
             geometry.eye_aspect_ratio,
@@ -351,7 +368,7 @@ def _driver_data(
     if state_metrics is not None:
         if timestamp is None:
             raise ValueError("timestamp is required when state_metrics is provided")
-        return state_metrics.update(
+        data = state_metrics.update(
             data,
             timestamp,
             gaze=(geometry.gaze_horizontal, geometry.gaze_vertical),
@@ -360,6 +377,8 @@ def _driver_data(
             mouth_aspect=geometry.mouth_aspect_ratio,
             blendshapes=result.blendshapes,
         )
+    if anger_probability is not None:
+        data["anger_p"] = min(1.0, max(0.0, anger_probability))
     return data
 
 
@@ -397,6 +416,22 @@ def run_live(
     blink_detector = BlinkDetector(closed_ear, open_ear)
     state_metrics = DriverStateMetrics(settings)
     event_detector = VisualEventDetector(settings)
+    anger_model_path = resolved_path(string_setting(settings, "anger_model", "model_path"))
+    anger_model: EmotionModel | None = None
+    if anger_model_path.is_file():
+        try:
+            anger_model = EmotionModel(anger_model_path)
+            log.info("Loaded anger-vs-other model from %s", anger_model_path)
+        except (RuntimeError, ValueError, OSError):
+            log.exception("Could not load anger model; using blendshape fallback")
+    else:
+        log.info("Anger model is not trained yet; using blendshape fallback")
+    anger_rate_hz = float_setting(settings, "anger_model", "rate_hz")
+    anger_smoothing = float_setting(settings, "anger_model", "smoothing_alpha")
+    if anger_rate_hz <= 0 or not 0.0 < anger_smoothing <= 1.0:
+        raise ValueError("CV anger model rate must be positive and smoothing alpha in (0, 1]")
+    anger_probability = 0.0
+    last_anger_sample = -math.inf
     state_rate_hz = float_setting(settings, "publisher", "state_rate_hz")
     preview_rate_hz = float_setting(settings, "preview", "rate_hz")
     preview_width = integer_setting(settings, "preview", "width", minimum=1)
@@ -409,6 +444,7 @@ def run_live(
     next_state_publish = 0.0
     next_preview_publish = 0.0
     frame_times: deque[float] = deque()
+    last_eye_closed_p = 0.0
 
     def stop(_signum: int, _frame: object) -> None:
         nonlocal running
@@ -442,6 +478,17 @@ def run_live(
                     fps = (len(frame_times) - 1) / elapsed
 
             result = landmarker.process(frame)
+            if (
+                anger_model is not None
+                and result.face_present
+                and now - last_anger_sample >= 1.0 / anger_rate_hz
+            ):
+                last_anger_sample = now
+                try:
+                    observed_anger = anger_model.predict(frame, result.landmarks)
+                    anger_probability += anger_smoothing * (observed_anger - anger_probability)
+                except Exception:
+                    log.debug("Anger model failed on frame; retaining last score", exc_info=True)
             data = _driver_data(
                 frame,
                 result,
@@ -451,7 +498,10 @@ def run_live(
                 fps,
                 state_metrics=state_metrics,
                 timestamp=now,
+                last_eye_closed_p=last_eye_closed_p,
+                anger_probability=(anger_probability if anger_model is not None else None),
             )
+            last_eye_closed_p = float(data["eye_closed_p"])
             for event in event_detector.update(data, now):
                 validated_event = validate("detector.event", event).model_dump(mode="json")
                 publisher.publish("detector.event", validated_event)
