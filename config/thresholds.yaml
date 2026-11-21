@@ -30,6 +30,8 @@ core:
       road_rage: 0.7               # RR-06: lower the music by 30%, then speak
     speak_max_s: 15                # longest wait for voice to finish speaking before counting
     voice_gap_s: 0.5               # pause before the next voice.say: voice drops non-T3 while busy
+    alarm_audio_key: alarm         # VR-05: assets/audio/alarm.wav, played by voice instead of speech
+    alarm_rounds: 5                # VR-05: alarm rounds after a T3 miss, until the driver answers
     default_lang: en               # until control.trip sets the driver's language
     cooldown_s:                    # LEAD-T14: per type, from one accepted alert to the next
       distraction: 60
