@@ -1,6 +1,7 @@
 import { useEffect, useState, type MouseEvent } from 'react'
 import { bus, type BusStatus } from './bus'
 import MessageLog from './MessageLog'
+import MusicPlayer from './MusicPlayer'
 
 type RoutePath = '/driver' | '/copilot' | '/debug'
 
@@ -71,7 +72,8 @@ function CopilotLayout() {
         <PanelPlaceholder title="VEHICLE MOTION" className="copilot-motion-panel" />
         <PanelPlaceholder title="CONVERSATION" className="copilot-conversation-panel" />
         <PanelPlaceholder title="EVENT TIMELINE" className="copilot-timeline-panel" />
-        <PanelPlaceholder title="AUDIO, MUSIC & HEART RATE" className="copilot-signals-panel" />
+        <PanelPlaceholder title="CABIN AUDIO & HEART RATE" className="copilot-signals-panel" />
+        <MusicPlayer />
         <PanelPlaceholder title="TRIP & ROAD CONTEXT" className="copilot-context-panel" />
       </div>
     </section>

@@ -1,4 +1,4 @@
-import type { Envelope } from './types'
+import type { Envelope, Topic, TopicDataMap } from './types'
 
 export type { Envelope } from './types'
 
@@ -99,6 +99,18 @@ class BusStore {
 
   getSeries(key: string) {
     return this.series.get(key)?.snapshot() ?? []
+  }
+
+  publish<K extends Topic>(topic: K, data: TopicDataMap[K]) {
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return false
+    this.socket.send(JSON.stringify({
+      op: 'pub',
+      topic,
+      ts: Date.now() / 1000,
+      src: 'ui',
+      data,
+    }))
+    return true
   }
 
   private connect() {
