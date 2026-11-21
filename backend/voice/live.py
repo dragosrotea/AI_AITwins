@@ -73,7 +73,13 @@ def read_clip(audio_key: str) -> bytes | None:
 
 
 async def capture_reply(
-    mic: Microphone, cursor: int, deadline: float, *, started_at: float, alert_id: str | None = None
+    mic: Microphone,
+    cursor: int,
+    deadline: float,
+    *,
+    started_at: float,
+    alert_id: str | None = None,
+    end_silence_s: float = END_SILENCE_S,
 ) -> tuple[bytes, float] | None:
     vad = Vad(2)
     frames: list[bytes] = []
@@ -92,7 +98,7 @@ async def capture_reply(
     speech_frames = 0
     positive_frames = 0
     onset_frames = 0
-    silent_frames = 0
+    endpoint_reached = False
     while True:
         for frame in mic.read_since(cursor):
             if frame.ended_at > deadline:
@@ -146,13 +152,11 @@ async def capture_reply(
             if positive:
                 last_speech = frame.ended_at
                 speech_frames = len(frames)
-                silent_frames = 0
-            elif last_speech is not None:
-                silent_frames += 1
-                if silent_frames * FRAME_S >= END_SILENCE_S:
-                    break
+            elif last_speech is not None and frame.ended_at >= last_speech + end_silence_s:
+                endpoint_reached = True
+                break
         remaining = deadline - perf_counter()
-        if remaining <= 0 or silent_frames * FRAME_S >= END_SILENCE_S:
+        if remaining <= 0 or endpoint_reached:
             break
         await asyncio.sleep(min(FRAME_S, remaining))
     retained = frames[: speech_frames + TRAILING_FRAMES] if speech_frames else []
@@ -207,6 +211,8 @@ async def interact(
     alert: VoiceSay,
     monitor: CabinMonitor | None = None,
     latency_log: TextIO | None = None,
+    *,
+    end_silence_s: float = END_SILENCE_S,
 ) -> None:
     timing = LatencySample()
     try:
@@ -243,9 +249,15 @@ async def interact(
         )
         await status(bus, alert.alert_id, "listening")
         capture = await capture_reply(
-            mic, cursor, deadline, started_at=started_at, alert_id=alert.alert_id
+            mic,
+            cursor,
+            deadline,
+            started_at=started_at,
+            alert_id=alert.alert_id,
+            end_silence_s=end_silence_s,
         )
-        timing.listening_ms = elapsed_ms(started_at, perf_counter())
+        capture_ended_at = perf_counter()
+        timing.listening_ms = elapsed_ms(started_at, capture_ended_at)
         if capture is None:
             timing.outcome = "silence"
             reply = VoiceReply(
@@ -253,6 +265,7 @@ async def interact(
             )
         else:
             pcm, speech_end = capture
+            timing.speech_to_capture_end_ms = elapsed_ms(speech_end, capture_ended_at)
             result = await asyncio.get_running_loop().run_in_executor(
                 inference, stt.transcribe, pcm, "en"
             )
@@ -297,8 +310,11 @@ async def interact(
         await status(bus, alert.alert_id, "idle")
 
 
-async def run_live(bus: BusClient, latency_log: TextIO | None = None) -> None:
+async def run_live(
+    bus: BusClient, latency_log: TextIO | None = None, *, end_silence_ms: int | None = None
+) -> None:
     settings = AudioSettings.load()
+    end_silence_s = END_SILENCE_S if end_silence_ms is None else end_silence_ms / 1000
     stt = await asyncio.to_thread(SpeechToText, offline=True)
     ready = asyncio.Event()
     pending: VoiceSay | None = None
@@ -335,6 +351,15 @@ async def run_live(bus: BusClient, latency_log: TextIO | None = None) -> None:
                 if alert is None:
                     continue
                 active = asyncio.create_task(
-                    interact(bus, mic, stt, inference, alert, monitor, latency_log)
+                    interact(
+                        bus,
+                        mic,
+                        stt,
+                        inference,
+                        alert,
+                        monitor,
+                        latency_log,
+                        end_silence_s=end_silence_s,
+                    )
                 )
                 await asyncio.gather(active, return_exceptions=True)
