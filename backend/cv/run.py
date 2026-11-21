@@ -456,10 +456,17 @@ def run_live(
     activity_settings = settings.get("activity_models")
     if not isinstance(activity_settings, dict):
         raise ValueError("Missing CV setting activity_models")
-    activity_models = FourModelPipeline(
-        resolved_path(string_setting(settings, "activity_models", "models_dir")),
-        tasks=("drowsiness", "distraction"),
-    )
+    activity_models: FourModelPipeline | None = None
+    try:
+        activity_models = FourModelPipeline(
+            resolved_path(string_setting(settings, "activity_models", "models_dir")),
+            tasks=("drowsiness", "distraction"),
+        )
+    except (FileNotFoundError, RuntimeError, ValueError, OSError):
+        log.warning(
+            "Activity models unavailable; continuing with landmark-based CV signals",
+            exc_info=True,
+        )
     activity_rate_hz = float_setting(settings, "activity_models", "rate_hz")
     if activity_rate_hz <= 0:
         raise ValueError("CV activity model rate must be positive")
@@ -527,7 +534,7 @@ def run_live(
                     fps = (len(frame_times) - 1) / elapsed
 
             result = landmarker.process(frame)
-            if now - last_activity_sample >= 1.0 / activity_rate_hz:
+            if activity_models is not None and now - last_activity_sample >= 1.0 / activity_rate_hz:
                 last_activity_sample = now
                 try:
                     activity_scores = _activity_scores(activity_models.predict_frame(frame))
