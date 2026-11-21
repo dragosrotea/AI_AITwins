@@ -4,23 +4,17 @@ import math
 from pathlib import Path
 from typing import Any
 
+from backend.config import load_config
+
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG = ROOT / "config" / "thresholds.yaml"
 
 
 def load_cv_settings(path: str | Path = DEFAULT_CONFIG) -> dict[str, Any]:
-    try:
-        import yaml
-    except ImportError as exc:
-        raise RuntimeError("CV configuration requires PyYAML from requirements.txt") from exc
-
     config_path = Path(path)
     if not config_path.is_file():
         raise FileNotFoundError(f"CV configuration not found: {config_path}")
-    document = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    if not isinstance(document, dict) or not isinstance(document.get("cv"), dict):
-        raise ValueError(f"{config_path} must contain a cv: mapping")
-    return document["cv"]
+    return load_config(path=config_path)["cv"]
 
 
 def integer_setting(settings: dict[str, Any], section: str, name: str, *, minimum: int = 0) -> int:
