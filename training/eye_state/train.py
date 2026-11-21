@@ -224,7 +224,7 @@ def train(args: argparse.Namespace) -> None:
         shifted = logits - logits.max()
         probabilities = np.exp(shifted) / np.exp(shifted).sum()
         labels.append(sample.closed)
-        predictions.append(int(float(probabilities[0]) >= threshold))
+        predictions.append(int(float(probabilities[1]) >= threshold))
 
     precision, recall = _metrics(labels, predictions)
     inference_ms = inference_seconds * 1000 / len(validation_samples)

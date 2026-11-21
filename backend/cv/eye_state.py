@@ -6,7 +6,7 @@ import numpy as np
 
 
 class EyeStateModel:
-    """CPU ONNX inference for the closed-eye probability from one or both eye crops."""
+    """CPU ONNX inference for the closed-eye (class 1) probability from eye crops."""
 
     def __init__(
         self,
@@ -65,7 +65,7 @@ class EyeStateModel:
             raise ValueError("Eye model returned non-finite logits")
         shifted = logits - logits.max(axis=1, keepdims=True)
         exponentials = np.exp(shifted)
-        closed_probabilities = exponentials[:, 0] / exponentials.sum(axis=1)
+        closed_probabilities = exponentials[:, 1] / exponentials.sum(axis=1)
         probabilities = [float(value) for value in closed_probabilities]
         return float(np.mean(closed_probabilities)), probabilities
 

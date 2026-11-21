@@ -198,7 +198,7 @@ def test_eye_state_model_reports_closed_probability(
 
         def run(self, _outputs: list[str], inputs: dict[str, np.ndarray]) -> list[np.ndarray]:
             assert inputs["eye"].shape == (2, 1, 64, 64)
-            return [np.asarray([[3.0, 0.0], [0.0, 3.0]], dtype=np.float32)]
+            return [np.asarray([[0.0, 3.0], [3.0, 0.0]], dtype=np.float32)]
 
     monkeypatch.setitem(
         __import__("sys").modules,
