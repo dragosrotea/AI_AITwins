@@ -54,6 +54,16 @@ class TripLog:
         """Log core's own record, such as log.alert_created."""
         self._line({"topic": f"log.{kind}", "ts": self.clock(), "src": "core", "data": data})
 
+    @staticmethod
+    def read_completed(path: Path) -> list[dict]:
+        with path.open(encoding="utf-8") as file:
+            return [json.loads(line) for line in file]
+
+    def append_summary(self, path: Path, data: dict[str, Any]) -> None:
+        record = {"topic": "trip.summary", "ts": self.clock(), "src": "core", "data": data}
+        with path.open("a", encoding="utf-8") as file:
+            file.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n")
+
     def close(self) -> None:
         if self._file is not None:
             self._file.close()
