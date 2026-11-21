@@ -6,11 +6,12 @@
 #   scripts/run_all.sh --fake=cv,hr     # only these on synthetic data
 #
 # A process whose module does not exist yet is skipped with a warning, so main always runs.
-# Env: PYTHON (default python3), DRIVEMATE_PROFILE (e.g. demo), DRIVEMATE_BUS_URL.
+# Env: PYTHON (default .venv/bin/python, else python3), DRIVEMATE_PROFILE, DRIVEMATE_BUS_URL.
 set -u
 cd "$(dirname "$0")/.."
 
-PYTHON="${PYTHON:-python3}"
+if [ -x .venv/bin/python ]; then DEFAULT_PYTHON=.venv/bin/python; else DEFAULT_PYTHON=python3; fi
+PYTHON="${PYTHON:-$DEFAULT_PYTHON}"
 FAKE_ALL=0
 FAKE_LIST=","
 for arg in "$@"; do
