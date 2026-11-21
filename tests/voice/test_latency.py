@@ -16,9 +16,16 @@ from backend.voice.tts import PlaybackTiming
 
 @pytest.mark.parametrize(
     ("path", "provider_failed", "outcome"),
-    [("keyword", False, "reply"), ("llm", False, "reply"), ("llm", True, "provider_failure")],
+    [
+        ("keyword", False, "reply"),
+        ("llm", False, "reply"),
+        ("llm", True, "provider_failure"),
+        ("llm", True, "provider_timeout"),
+    ],
 )
-async def test_timing_starts_at_last_speech_frame(monkeypatch, path, provider_failed, outcome):
+async def test_timing_starts_at_last_speech_frame(
+    monkeypatch, caplog, path, provider_failed, outcome
+):
     now = 10.0
 
     async def synthesize(_text, _lang):
@@ -47,10 +54,16 @@ async def test_timing_starts_at_last_speech_frame(monkeypatch, path, provider_fa
         now = 13.01
         return Transcription("private transcript", 150)
 
-    async def classify(_text):
+    async def classify(_text, *, question, timeout_s):
         nonlocal now
+        assert question == "Are you okay?" and timeout_s == 1.5
         now = 13.13
-        return ReplyClassification("UNCLEAR" if provider_failed else "OK", path, provider_failed)
+        return ReplyClassification(
+            "UNCLEAR" if provider_failed else "OK",
+            path,
+            provider_failed,
+            timed_out=outcome == "provider_timeout",
+        )
 
     monkeypatch.setattr(live, "perf_counter", lambda: now)
     monkeypatch.setattr(live, "english_alert", lambda alert: alert)
@@ -60,6 +73,7 @@ async def test_timing_starts_at_last_speech_frame(monkeypatch, path, provider_fa
     monkeypatch.setattr(live, "capture_reply", capture)
     monkeypatch.setattr(live, "classify_confirmation", classify)
     bus = Mock(publish=AsyncMock())
+    caplog.set_level("INFO", logger="backend.voice.reply")
     log = StringIO()
     alert = VoiceSay(alert_id="private-id", text="Are you okay?", tier="T2", lang="en")
     with ThreadPoolExecutor(max_workers=1) as executor:
@@ -74,6 +88,11 @@ async def test_timing_starts_at_last_speech_frame(monkeypatch, path, provider_fa
     )
     sample = LatencySample(**json.loads(log.getvalue()))
     assert reply["latency_ms"] == 1080
+    assert reply["transcript"] == "private transcript"
+    assert (
+        f"transcript='private transcript' intent={reply['intent']} path={path} outcome={outcome}"
+        in caplog.text
+    )
     assert (sample.outcome, sample.path, sample.playback_source) == (outcome, path, "tts")
     assert sample.playback_start_ms == pytest.approx(720)
     assert sample.listening_ms == pytest.approx(1260)

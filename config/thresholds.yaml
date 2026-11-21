@@ -224,6 +224,7 @@ voice:
   input_device: null
   output_device: null
   ring_buffer_s: 10
+  reply_timeout_s: 1.5
   cabin_baseline_s: 60
   cabin_shout_db: 15
   cabin_shout_s: 1.0  # Set to 0.5 for the demo.
@@ -250,6 +251,8 @@ ui:
 profiles:
   # 5-minute demo: effects must show within a minute or so.
   demo:
+    voice:
+      reply_timeout_s: 2.5
     core:
       alerts:
         t1_min_interval_s: 60

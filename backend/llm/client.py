@@ -2,6 +2,8 @@
 
 import asyncio
 import math
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from pathlib import Path
 
 import httpx
@@ -12,6 +14,28 @@ PROVIDERS = {
     "openai": ("https://api.openai.com/v1/chat/completions", "OPENAI_API_KEY"),
     "groq": ("https://api.groq.com/openai/v1/chat/completions", "GROQ_API_KEY"),
 }
+_shared_client: ContextVar[httpx.AsyncClient | None] = ContextVar("llm_http_client", default=None)
+
+
+@asynccontextmanager
+async def reuse_http_client():
+    """Share one connection pool with requests in this scope and its child tasks."""
+    async with httpx.AsyncClient(timeout=None) as client:
+        token = _shared_client.set(client)
+        try:
+            yield client
+        finally:
+            _shared_client.reset(token)
+
+
+@asynccontextmanager
+async def _request_client():
+    client = _shared_client.get()
+    if client is not None:
+        yield client
+    else:
+        async with httpx.AsyncClient(timeout=None) as client:
+            yield client
 
 
 async def request_text(
@@ -38,7 +62,7 @@ async def request_text(
             messages = [{"role": "user", "content": prompt}]
             if system_prompt is not None:
                 messages.insert(0, {"role": "system", "content": system_prompt})
-            async with httpx.AsyncClient(timeout=None) as client:
+            async with _request_client() as client:
                 response = await client.post(
                     url,
                     headers={"Authorization": f"Bearer {key}"},

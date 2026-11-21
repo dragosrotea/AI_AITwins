@@ -12,7 +12,14 @@ from typing import Literal, TextIO
 @dataclass
 class LatencySample:
     outcome: Literal[
-        "reply", "silence", "interrupted", "provider_failure", "unclear", "no_transcript", "error"
+        "reply",
+        "silence",
+        "interrupted",
+        "provider_failure",
+        "provider_timeout",
+        "unclear",
+        "no_transcript",
+        "error",
     ] = "error"
     path: Literal["keyword", "llm"] | None = None
     playback_source: Literal["tts", "wav"] | None = None
@@ -44,6 +51,7 @@ def report(samples: list[LatencySample]) -> str:
                 "silence",
                 "interrupted",
                 "provider_failure",
+                "provider_timeout",
                 "unclear",
                 "no_transcript",
                 "error",
