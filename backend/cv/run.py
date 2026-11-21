@@ -244,6 +244,7 @@ def _camera_config(settings: dict[str, Any], index_override: int | None) -> Came
         index=index,
         capture_width=integer_setting(settings, "camera", "capture_width", minimum=1),
         capture_height=integer_setting(settings, "camera", "capture_height", minimum=1),
+        capture_fourcc=string_setting(settings, "camera", "capture_fourcc"),
         process_width=integer_setting(settings, "camera", "process_width", minimum=1),
         process_height=integer_setting(settings, "camera", "process_height", minimum=1),
     )
@@ -289,6 +290,17 @@ def _empty_driver_data(fps: float) -> dict[str, object]:
     }
 
 
+def _next_deadline(deadline: float, now: float, interval: float) -> float:
+    if not math.isfinite(deadline) or not math.isfinite(now) or not math.isfinite(interval):
+        raise ValueError("Publish deadlines and intervals must be finite")
+    if interval <= 0:
+        raise ValueError("Publish interval must be positive")
+    deadline += interval
+    while deadline <= now:
+        deadline += interval
+    return deadline
+
+
 def _driver_data(
     frame: Any,
     result: Any,
@@ -296,9 +308,16 @@ def _driver_data(
     eye_model: EyeStateModel | None,
     blink_detector: BlinkDetector,
     fps: float,
+    *,
+    state_metrics: DriverStateMetrics | None = None,
+    timestamp: float | None = None,
 ) -> dict[str, object]:
     data = _empty_driver_data(fps)
     if not result.face_present:
+        if state_metrics is not None:
+            if timestamp is None:
+                raise ValueError("timestamp is required when state_metrics is provided")
+            return state_metrics.update(data, timestamp)
         return data
 
     geometry: FaceGeometry = extract_geometry(
@@ -306,7 +325,8 @@ def _driver_data(
         result.transformation_matrix,
         pitch_sign=float_setting(settings, "face_landmarks", "pitch_sign"),
     )
-    if blink_detector.update(geometry.eye_aspect_ratio):
+    blink = blink_detector.update(geometry.eye_aspect_ratio)
+    if blink:
         log.debug("Eye blink detected")
     if eye_model is not None:
         eye_crops = crop_eyes(
@@ -322,12 +342,22 @@ def _driver_data(
             float_setting(settings, "eye_state", "ear_closed_threshold"),
             float_setting(settings, "eye_state", "ear_open_threshold"),
         )
-    return {
+    data = {
         **data,
         "face_present": True,
         "eye_closed_p": eye_closed_p,
         "head": {"yaw": geometry.yaw, "pitch": geometry.pitch, "roll": geometry.roll},
     }
+    if state_metrics is not None:
+        if timestamp is None:
+            raise ValueError("timestamp is required when state_metrics is provided")
+        return state_metrics.update(
+            data,
+            timestamp,
+            gaze=(geometry.gaze_horizontal, geometry.gaze_vertical),
+            blink=blink,
+        )
+    return data
 
 
 def run_live(
@@ -387,6 +417,8 @@ def run_live(
         camera.start()
         signal.signal(signal.SIGINT, stop)
         signal.signal(signal.SIGTERM, stop)
+        next_state_publish = time.monotonic()
+        next_preview_publish = next_state_publish
         while running:
             frame, timestamp = camera.get_latest()
             if frame is None or timestamp is None:
@@ -407,15 +439,23 @@ def run_live(
                     fps = (len(frame_times) - 1) / elapsed
 
             result = landmarker.process(frame)
-            data = _driver_data(frame, result, settings, eye_model, blink_detector, fps)
-            data = state_metrics.update(data, now)
+            data = _driver_data(
+                frame,
+                result,
+                settings,
+                eye_model,
+                blink_detector,
+                fps,
+                state_metrics=state_metrics,
+                timestamp=now,
+            )
             for event in event_detector.update(data, now):
                 validated_event = validate("detector.event", event).model_dump(mode="json")
                 publisher.publish("detector.event", validated_event)
             if now >= next_state_publish:
                 validated = validate("driver.state", data).model_dump(mode="json")
                 publisher.publish("driver.state", validated)
-                next_state_publish = now + 1.0 / state_rate_hz
+                next_state_publish = _next_deadline(next_state_publish, now, 1.0 / state_rate_hz)
             if now >= next_preview_publish:
                 _publish_preview(
                     publisher,
@@ -424,7 +464,9 @@ def run_live(
                     settings,
                     result.landmarks if result.face_present else [],
                 )
-                next_preview_publish = now + 1.0 / preview_rate_hz
+                next_preview_publish = _next_deadline(
+                    next_preview_publish, now, 1.0 / preview_rate_hz
+                )
     finally:
         camera.stop()
         landmarker.close()

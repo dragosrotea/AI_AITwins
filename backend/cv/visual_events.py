@@ -27,22 +27,38 @@ def _integer_value(settings: dict[str, Any], name: str, *, minimum: int = 0) -> 
 
 
 class DriverStateMetrics:
-    """Add live eye-closure duration and PERCLOS to a per-frame driver state."""
+    """Compute rolling eye-closure, blink-rate, and gaze metrics."""
 
     def __init__(self, settings: dict[str, Any]) -> None:
         self._closed_probability_threshold = float_setting(
             settings, "eye_state", "closed_probability_threshold"
         )
         self._perclos_window_s = _float_value(settings, "perclos_window_s")
-        if self._perclos_window_s <= 0:
-            raise ValueError("CV setting cv.perclos_window_s must be positive")
+        self._gaze_window_s = _float_value(settings, "gaze_window_s")
+        self._blink_window_s = _float_value(settings, "blink_window_s")
+        for name, value in (
+            ("perclos_window_s", self._perclos_window_s),
+            ("gaze_window_s", self._gaze_window_s),
+            ("blink_window_s", self._blink_window_s),
+        ):
+            if value <= 0:
+                raise ValueError(f"CV setting cv.{name} must be positive")
         self._segments: deque[tuple[float, float, bool]] = deque()
+        self._gaze_samples: deque[tuple[float, float, float]] = deque()
+        self._blink_times: deque[float] = deque()
         self._previous_timestamp: float | None = None
         self._previous_face_present = False
         self._previous_closed = False
         self._closed_since: float | None = None
 
-    def update(self, data: Mapping[str, Any], now: float) -> dict[str, Any]:
+    def update(
+        self,
+        data: Mapping[str, Any],
+        now: float,
+        *,
+        gaze: tuple[float, float] | None = None,
+        blink: bool = False,
+    ) -> dict[str, Any]:
         if not math.isfinite(now):
             raise ValueError("Driver state timestamp must be finite")
         state = dict(data)
@@ -82,6 +98,35 @@ class DriverStateMetrics:
         state["perclos_60s"] = (
             closed_s / observed_s if observed_s >= self._perclos_window_s else 0.0
         )
+
+        if face_present and gaze is not None:
+            gaze_x, gaze_y = gaze
+            if not math.isfinite(gaze_x) or not math.isfinite(gaze_y):
+                raise ValueError("Gaze coordinates must be finite")
+            self._gaze_samples.append(
+                (now, math.degrees(math.atan(gaze_x)), math.degrees(math.atan(gaze_y)))
+            )
+        gaze_cutoff = now - self._gaze_window_s
+        while self._gaze_samples and self._gaze_samples[0][0] < gaze_cutoff:
+            self._gaze_samples.popleft()
+        if len(self._gaze_samples) > 1:
+            gaze_xs = [sample[1] for sample in self._gaze_samples]
+            gaze_ys = [sample[2] for sample in self._gaze_samples]
+            mean_x = sum(gaze_xs) / len(gaze_xs)
+            mean_y = sum(gaze_ys) / len(gaze_ys)
+            variance = sum(
+                (x - mean_x) ** 2 + (y - mean_y) ** 2 for x, y in zip(gaze_xs, gaze_ys, strict=True)
+            ) / len(self._gaze_samples)
+            state["gaze_dispersion_30s"] = math.sqrt(variance)
+        else:
+            state["gaze_dispersion_30s"] = 0.0
+
+        if blink and face_present:
+            self._blink_times.append(now)
+        blink_cutoff = now - self._blink_window_s
+        while self._blink_times and self._blink_times[0] < blink_cutoff:
+            self._blink_times.popleft()
+        state["blink_rate_pm"] = len(self._blink_times) * 60.0 / self._blink_window_s
         return state
 
 

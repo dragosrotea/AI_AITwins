@@ -91,6 +91,7 @@ cv:
     max_index: 10
     capture_width: 1280
     capture_height: 720
+    capture_fourcc: MJPG
     process_width: 640
     process_height: 360
   publisher:
@@ -129,6 +130,7 @@ cv:
   frame_overlay: true
   perclos_window_s: 60             # CV-05
   gaze_window_s: 30                # CV-05
+  blink_window_s: 60               # CV-05
   yawn_window_s: 600               # CV-05
   no_face_notice_s: 2              # CV-06
   no_face_warning_s: 5             # CV-06

@@ -18,12 +18,15 @@ class CameraConfig:
     index: int = 0
     capture_width: int = 1280
     capture_height: int = 720
+    capture_fourcc: str = "MJPG"
     process_width: int = 640
     process_height: int = 360
 
     def __post_init__(self) -> None:
         if self.index < 0:
             raise ValueError("Camera index must be non-negative")
+        if len(self.capture_fourcc) != 4 or not self.capture_fourcc.isascii():
+            raise ValueError("Camera capture_fourcc must be a four-character ASCII code")
         if (
             min(self.capture_width, self.capture_height, self.process_width, self.process_height)
             <= 0
@@ -72,11 +75,20 @@ class CameraCapture:
     def open(self) -> None:
         cv2 = self._load_cv2()
         capture = cv2.VideoCapture(self.config.index)
-        capture.set(cv2.CAP_PROP_FRAME_WIDTH, float(self.config.capture_width))
-        capture.set(cv2.CAP_PROP_FRAME_HEIGHT, float(self.config.capture_height))
         if not capture.isOpened():
             capture.release()
             raise RuntimeError(f"Unable to open webcam index {self.config.index}")
+        if not capture.set(
+            cv2.CAP_PROP_FOURCC,
+            float(cv2.VideoWriter_fourcc(*self.config.capture_fourcc)),
+        ):
+            capture.release()
+            raise RuntimeError(
+                f"Webcam {self.config.index} does not accept capture format "
+                f"{self.config.capture_fourcc}; choose a supported camera.capture_fourcc"
+            )
+        capture.set(cv2.CAP_PROP_FRAME_WIDTH, float(self.config.capture_width))
+        capture.set(cv2.CAP_PROP_FRAME_HEIGHT, float(self.config.capture_height))
         self._capture = capture
 
     def start(self) -> None:
