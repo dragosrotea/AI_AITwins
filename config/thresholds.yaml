@@ -30,6 +30,8 @@ core:
       road_rage: 0.7               # RR-06: lower the music by 30%, then speak
     speak_max_s: 15                # longest wait for voice to finish speaking before counting
     voice_gap_s: 0.5               # pause before the next voice.say: voice drops non-T3 while busy
+    alarm_audio_key: alarm         # VR-05: assets/audio/alarm.wav, played by voice instead of speech
+    alarm_rounds: 5                # VR-05: alarm rounds after a T3 miss, until the driver answers
     default_lang: en               # English-only runtime
     cooldown_s:                    # LEAD-T14: per type, from one accepted alert to the next
       distraction: 60
@@ -67,6 +69,7 @@ core:
     max_engagements: 3             # ZO-05
     engagement_window_s: 1800      # ZO-05
     weights: {visual: 0.7, monotony: 0.3}
+    feedback_question: "How are you feeling now?"  # ZO-04 feedback ends with a question (VR-01)
   checkin:
     base_interval_min: 30          # CI-02
     short_sleep_h: 6               # CI-02
@@ -183,6 +186,10 @@ cv:
     weights_brow: 0.35
     weights_mouth: 0.45
     weights_nose: 0.2
+  anger_model:
+    model_path: models/trained/emotion.pt
+    rate_hz: 5
+    smoothing_alpha: 0.2
   zoning:
     window_s: 60
     gaze_dispersion_deg: 2.0
@@ -251,16 +258,11 @@ profiles:
         max_window_s: 300
       zoning:
         monotony_window_s: 60      # LEAD-T19: 60 s in the demo profile
+        weights: {visual: 1.0, monotony: 0.3}  # ZO-01: a 30 s stare alone crosses the threshold
         engagement_interval_s: 60
         engagement_window_s: 300
-      checkin:
-        base_interval_min: 3
-        min_interval_min: 1
-        max_interval_min: 5
-        break_every_min: 5
-        break_risk_min: 4
-        event_lookback_min: 2
-        quiet_min: 3
+      # Check-ins keep their real values: demo step 1 shows "every 15 min, break at 1:45"
+      # (5 h sleep), and none should interrupt steps 2-6 (LEAD-T21).
     cv:
       perclos_window_s: 30         # DD-03: show within 60 s in demo mode
       yawn_window_s: 120

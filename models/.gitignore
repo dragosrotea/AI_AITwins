@@ -1,2 +1,6 @@
 *
 !.gitignore
+!trained/
+trained/*
+!trained/emotion.pt
+!trained/training_report.json

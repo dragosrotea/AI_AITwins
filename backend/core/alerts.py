@@ -25,7 +25,8 @@ not new alerts. Suppressed alerts are not spoken but go to on_suppress (the trip
 Replies: OK and ANSWER close; NOT_OK closes and calls on_follow_up; HELP closes and calls
 on_emergency. UNCLEAR, NONE or a timeout is a miss: the first max_repeats misses repeat the
 short text, the next escalates T1 -> T2 -> T3; a miss at T3 after its repeats calls on_alarm
-(VR-05), and for a crash also on_emergency.
+(and on_emergency after a crash) and starts a continuous alarm (VR-05): voice plays
+alarm_audio_key and listens, again and again, until any reply or alarm_rounds rounds.
 """
 
 from __future__ import annotations
@@ -51,6 +52,22 @@ MISSES = {"UNCLEAR", "NONE"}
 REPEAT_TEXT = {
     "en": "I didn't catch that. Are you okay?",
     "ro": "Nu am înțeles. Ești bine?",
+}
+ALARM_TEXT = {  # shown and logged; voice plays the alarm clip instead of speaking it
+    "en": "Alarm. Please answer me. Are you okay?",
+    "ro": "Alarmă. Te rog să-mi răspunzi. Ești bine?",
+}
+HELP_TEXT = {  # VR-06 without X3 (Twilio, LEAD-T22): a spoken confirmation
+    "en": (
+        "I hear you. I've logged an emergency. If you can, stop somewhere safe and call for help. "
+        "Are you safe right now?",
+        "Are you safe right now?",
+    ),
+    "ro": (
+        "Te aud. Am înregistrat o urgență. Dacă poți, oprește în siguranță și cere ajutor. "
+        "Ești în siguranță acum?",
+        "Ești în siguranță acum?",
+    ),
 }
 ESCALATE_TEXT = {
     "en": "Please answer me now. Are you okay?",
@@ -78,6 +95,7 @@ class Alert:
     deadline: float = 0.0
     seq: int = 0  # submission order, for FIFO within a tier
     engagement_answer: str | None = None
+    alarm_rounds: int = 0  # VR-05: continuous alarm after a T3 miss
 
 
 def _noop(alert: Alert, reply: dict[str, Any] | None) -> None:
@@ -300,7 +318,9 @@ class AlertManager:
             "lang": alert.lang,
             "listen_s": self.cfg["listen_s"],
         }
-        if alert.audio_key and alert.spoken == alert.text:
+        if alert.alarm_rounds and alert.spoken == ALARM_TEXT[alert.lang]:
+            say["audio_key"] = self.cfg["alarm_audio_key"]  # VR-05: the alarm clip, not speech
+        elif alert.audio_key and alert.spoken == alert.text:
             say["audio_key"] = alert.audio_key  # the clip matches only the original text
         self.publish("voice.say", say)
 
@@ -313,13 +333,21 @@ class AlertManager:
             return
         next_tier = NEXT_TIER.get(alert.tier)
         self._set_status(alert, "escalated")
-        if next_tier is None:  # missed at T3: alarm, and the emergency flow after a crash
-            log.warning("T3 %s missed: alarm", alert.type)
-            self.active = None
-            self.on_alarm(alert, None)
-            if alert.type == "crash_candidate":
-                self.on_emergency(alert, None)
-            self._later(self._start_next)
+        if next_tier is None:  # missed at T3: continuous alarm, emergency flow after a crash
+            if alert.alarm_rounds == 0:
+                log.warning("T3 %s missed: alarm", alert.type)
+                self.on_alarm(alert, None)
+                if alert.type == "crash_candidate":
+                    self.on_emergency(alert, None)
+            if alert.alarm_rounds >= self.cfg["alarm_rounds"]:
+                log.warning("T3 %s: no answer after %d alarms", alert.type, alert.alarm_rounds)
+                self.active = None
+                self._later(self._start_next)
+                return
+            alert.alarm_rounds += 1
+            alert.misses = self.cfg["max_repeats"]  # every further miss sounds the alarm again
+            alert.spoken = ALARM_TEXT[alert.lang]
+            self._later(lambda: self._speak(alert, first=False))
             return
         log.info("%s %s escalates to %s", alert.tier, alert.type, next_tier)
         alert.tier, alert.misses = next_tier, 0

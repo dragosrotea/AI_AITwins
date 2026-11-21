@@ -3,7 +3,10 @@
 A CV detector.event becomes an alert at the tier from config core.routing.tiers: core decides
 the tier, whatever tier the event carries (a mismatch is logged). Drowsiness and microsleep
 first cancel queued trivia (core.routing.cancels, DD-04). Core events use fusion_tiers.
-CV zoning_out uses the T1 engagement route and checks trip and road eligibility.
+zoning_out (from core's zoning fusion, LEAD-T19, or CV) uses the T1 engagement route: trivia or
+a fun fact per the pre-trip preference (nothing for "quiet"), never in HIGH road load (ZO-06),
+and a break recommendation instead after max_engagements in engagement_window_s (ZO-05). A
+graded trivia answer is answered aloud (ZO-04).
 
 The spoken text comes from AlertWriter (LEAD-T13): the LLM for T1/T2, else the voice engineer's
 catalog. TEMPLATES below are the last-resort lines and supply the short repeat text (VR-05).
@@ -14,10 +17,14 @@ or touch anything, never blame, never encourage driving on when tired.
 from __future__ import annotations
 
 import logging
+import time
+from collections import deque
+from collections.abc import Callable
 from typing import Any
 
 from backend.core.alerts import Alert, AlertManager
 from backend.core.wording import AlertWriter
+from backend.core.zoning import road_blocked
 
 log = logging.getLogger("core.events")
 
@@ -80,10 +87,20 @@ TEMPLATES: dict[str, dict[str, tuple[str, str]]] = {
 class EventRouter:
     """Routes validated CV detector.event envelopes to the Alert Manager (LEAD-T11, T15, T13)."""
 
-    def __init__(self, manager: AlertManager, routing: dict[str, Any], writer: AlertWriter) -> None:
+    def __init__(
+        self,
+        manager: AlertManager,
+        routing: dict[str, Any],
+        writer: AlertWriter,
+        zoning: dict[str, Any] | None = None,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
         self.manager = manager
         self.routing = routing
         self.writer = writer
+        self.zoning = zoning or {}
+        self.clock = clock
+        self._engagements: deque[float] = deque()  # ZO-05: times of spoken engagements
         self._wording: set[str] = set()  # types waiting on the LLM, so repeats are dropped
         self.engagement = "quiet"
         self.road_blocked = False
@@ -101,15 +118,14 @@ class EventRouter:
         )
 
     def on_road(self, data: dict[str, Any]) -> None:
-        traffic = (data.get("traffic") or "").casefold().replace("_", "-").replace(" ", "-")
-        self.road_blocked = data["load"] == "HIGH" or traffic == "stop-and-go"
+        self.road_blocked = road_blocked(data)
         if self.road_blocked:
             self._engagement_epoch += 1
             self.manager.cancel_queued(["zoning_out"])
 
     def _can_engage(self) -> bool:
         return (
-            self.engagement != "quiet"
+            self.engagement != "quiet"  # the pre-trip preference (CI-01): no form, no trivia
             and not self.road_blocked
             and not any(alert.tier != "T1" for alert in self.manager.pending())
             and not any(kind != "zoning_out" for kind in self._wording)
@@ -122,7 +138,7 @@ class EventRouter:
         # routes anything else of its own, so no event can loop.
         source = envelope.get("src")
         sources = {"cv": self.routing["tiers"], "core": self.routing["fusion_tiers"]}
-        is_engagement = source == "cv" and kind == "zoning_out"
+        is_engagement = kind == "zoning_out" and source in ("cv", "core")
         tier = "T1" if is_engagement else sources.get(source, {}).get(kind)
         if tier is None or (not is_engagement and kind not in TEMPLATES):
             if source == "cv":
@@ -138,6 +154,14 @@ class EventRouter:
             self.manager.cancel_queued(cancels)  # DD-04, before any wait
         if is_engagement and not self._can_engage():
             return None
+        if is_engagement and self._too_many_engagements():
+            # ZO-05: persistent zoning out means fatigue: recommend a break, not more trivia.
+            log.info(
+                "zoning_out: %d engagements in the window, recommending a break",
+                len(self._engagements),
+            )
+            data = {**data, "type": "break_due"}
+            kind, is_engagement = "break_due", False
         if kind in self._wording or any(a.type == kind for a in self.manager.pending()):
             return None  # one alert per type at a time
         reason = self.manager.blocked(kind, tier)
@@ -177,6 +201,8 @@ class EventRouter:
             lang=wording.lang,
             audio_key=wording.audio_key,
         )
+        if alert is not None and kind == "zoning_out":
+            self._engagements.append(self.clock())
         if alert is not None:
             log.info(
                 "detector.event %s (score %.0f) -> %s alert %s, text from %s",
@@ -219,4 +245,43 @@ class EventRouter:
         )
         if alert is not None:
             self._engagement_index += 1
+            self._engagements.append(self.clock())
         return alert
+
+    def _too_many_engagements(self) -> bool:
+        window = self.zoning.get("engagement_window_s")
+        limit = self.zoning.get("max_engagements")
+        if window is None or limit is None:
+            return False
+        now = self.clock()
+        while self._engagements and now - self._engagements[0] > window:
+            self._engagements.popleft()
+        return len(self._engagements) >= limit
+
+    async def answer_feedback(self, alert: Alert, reply: dict[str, Any]) -> Alert | None:
+        """ZO-04: grade a trivia answer leniently and say the result in one short sentence."""
+        try:
+            from backend.llm import grade_answer
+        except ImportError:
+            log.warning("grading unavailable")
+            return None
+        assert alert.engagement_answer is not None
+        result = await grade_answer(alert.text, alert.engagement_answer, reply["transcript"])
+        if result is None:
+            return None
+        feedback = result["feedback"].rstrip(". ")
+        if not result["correct"]:
+            feedback = f"{feedback}, it's {alert.engagement_answer}"
+        question = self.zoning.get("feedback_question", "How are you feeling now?")
+        text = f"{feedback}. {question}"
+        # An answer to the driver: not limited (AL-02), and voice hears the reply as ANSWER,
+        # which closes it without another grade (no engagement_answer).
+        return self.manager.submit(
+            "zoning_out",
+            "T1",
+            text,
+            short_text=question,
+            signals={"graded": alert.alert_id, "correct": result["correct"]},
+            lang="en",
+            bypass_limits=True,
+        )

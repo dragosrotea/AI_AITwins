@@ -1,0 +1,278 @@
+{
+  "models": {
+    "emotion": {
+      "classes": [
+        "other",
+        "anger"
+      ],
+      "validation_loss": 0.6030926480396248,
+      "validation_macro_f1": 0.5536030530929565,
+      "validation_metrics": {
+        "macro_precision": 0.5522384643554688,
+        "macro_recall": 0.5552664399147034,
+        "macro_f1": 0.5536030530929565,
+        "per_class": {
+          "0": {
+            "precision": 0.8764067888259888,
+            "recall": 0.8664778470993042,
+            "f1": 0.871414065361023
+          },
+          "1": {
+            "precision": 0.22807016968727112,
+            "recall": 0.24405506253242493,
+            "f1": 0.23579201102256775
+          }
+        },
+        "accuracy": 0.7798676490783691
+      },
+      "test_metrics": {
+        "macro_precision": 0.5472375750541687,
+        "macro_recall": 0.5532376170158386,
+        "macro_f1": 0.5495835542678833,
+        "per_class": {
+          "0": {
+            "precision": 0.8810935616493225,
+            "recall": 0.86012864112854,
+            "f1": 0.8704848885536194
+          },
+          "1": {
+            "precision": 0.2133815586566925,
+            "recall": 0.24634654819965363,
+            "f1": 0.22868216037750244
+          }
+        },
+        "accuracy": 0.7782111763954163
+      },
+      "validation_split": "stratified train-folder validation split; provided test folder reserved for final metrics; FER2013 has no subject IDs",
+      "weights": "models/trained/emotion.pt",
+      "training": {
+        "architecture": "emotion_cnn",
+        "pretrained": false,
+        "initialization": "random",
+        "frozen_backbone_epochs": 0,
+        "backbone_lr_scale": 0.1,
+        "epochs_run": 7
+      }
+    },
+    "age": {
+      "classes": [
+        "MIDDLE",
+        "OLD",
+        "YOUNG"
+      ],
+      "validation_loss": 0.5599373860354401,
+      "validation_macro_f1": 0.7815254330635071,
+      "validation_metrics": {
+        "macro_precision": 0.7956941723823547,
+        "macro_recall": 0.770129382610321,
+        "macro_f1": 0.7815254330635071,
+        "per_class": {
+          "0": {
+            "precision": 0.8222605586051941,
+            "recall": 0.8819990754127502,
+            "f1": 0.8510828614234924
+          },
+          "1": {
+            "precision": 0.7155963182449341,
+            "recall": 0.6513569951057434,
+            "f1": 0.6819671988487244
+          },
+          "2": {
+            "precision": 0.8492257595062256,
+            "recall": 0.7770320773124695,
+            "f1": 0.8115264177322388
+          }
+        },
+        "accuracy": 0.8188897371292114
+      },
+      "test_metrics": null,
+      "validation_split": "stratified image holdout from the labeled CSV; subject IDs and a separate test split are not supplied, so this is not person-independent",
+      "weights": "models/trained/age.pt",
+      "training": {
+        "architecture": "mobilenet_v3_large",
+        "pretrained": true,
+        "initialization": "imagenet",
+        "frozen_backbone_epochs": 2,
+        "backbone_lr_scale": 0.1,
+        "epochs_run": 15
+      }
+    },
+    "drowsiness": {
+      "classes": [
+        "blinks/blinking",
+        "eyes_state/close",
+        "eyes_state/closing",
+        "eyes_state/open",
+        "eyes_state/opening",
+        "eyes_state/undefined",
+        "yawning/Yawning with hand",
+        "yawning/Yawning without hand"
+      ],
+      "validation_loss": 0.5819726011992693,
+      "validation_macro_f1": 0.5332823991775513,
+      "validation_metrics": {
+        "macro_precision": 0.4983140528202057,
+        "macro_recall": 0.5927097797393799,
+        "macro_f1": 0.5332823991775513,
+        "per_class": {
+          "0": {
+            "precision": 0.8614506721496582,
+            "recall": 0.8019726872444153,
+            "f1": 0.8306483626365662
+          },
+          "1": {
+            "precision": 0.6868131756782532,
+            "recall": 0.7911392450332642,
+            "f1": 0.7352941036224365
+          },
+          "2": {
+            "precision": 0.2915326952934265,
+            "recall": 0.6430259943008423,
+            "f1": 0.4011799395084381
+          },
+          "3": {
+            "precision": 0.8485834002494812,
+            "recall": 0.9520583748817444,
+            "f1": 0.8973477482795715
+          },
+          "4": {
+            "precision": 0.4189189076423645,
+            "recall": 0.6435986161231995,
+            "f1": 0.5075033903121948
+          },
+          "5": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+          },
+          "6": {
+            "precision": 0.8792135119438171,
+            "recall": 0.9098837375640869,
+            "f1": 0.8942856788635254
+          },
+          "7": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+          }
+        }
+      },
+      "test_metrics": null,
+      "validation_split": "chronological 80/20 holdout per recording; recordings may share drivers, so this is not subject-independent validation",
+      "weights": "models/trained/drowsiness.pt",
+      "training": {
+        "architecture": "mobilenet_v3_large",
+        "pretrained": true,
+        "initialization": "imagenet",
+        "frozen_backbone_epochs": 2,
+        "backbone_lr_scale": 0.1,
+        "epochs_run": 15
+      }
+    },
+    "distraction": {
+      "classes": [
+        "driver_actions/change_gear",
+        "driver_actions/drinking",
+        "driver_actions/hair_and_makeup",
+        "driver_actions/phonecall_left",
+        "driver_actions/phonecall_right",
+        "driver_actions/radio",
+        "driver_actions/reach_backseat",
+        "driver_actions/reach_side",
+        "driver_actions/safe_drive",
+        "driver_actions/talking_to_passenger",
+        "driver_actions/texting_left",
+        "driver_actions/texting_right",
+        "driver_actions/unclassified"
+      ],
+      "validation_loss": 1.0404653233647798,
+      "validation_macro_f1": 0.5168603658676147,
+      "validation_metrics": {
+        "macro_precision": 0.5360754728317261,
+        "macro_recall": 0.5389806032180786,
+        "macro_f1": 0.5168603658676147,
+        "per_class": {
+          "0": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+          },
+          "1": {
+            "precision": 0.9640287756919861,
+            "recall": 0.8271604776382446,
+            "f1": 0.890365481376648
+          },
+          "2": {
+            "precision": 0.8093385100364685,
+            "recall": 0.8583218455314636,
+            "f1": 0.8331108093261719
+          },
+          "3": {
+            "precision": 0.9992529153823853,
+            "recall": 0.9563818573951721,
+            "f1": 0.9773474931716919
+          },
+          "4": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+          },
+          "5": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+          },
+          "6": {
+            "precision": 0.4166666567325592,
+            "recall": 1.0,
+            "f1": 0.5882353186607361
+          },
+          "7": {
+            "precision": 0.7968906760215759,
+            "recall": 0.807418704032898,
+            "f1": 0.8021202087402344
+          },
+          "8": {
+            "precision": 0.8007981181144714,
+            "recall": 0.9313479065895081,
+            "f1": 0.8611533045768738
+          },
+          "9": {
+            "precision": 0.747706413269043,
+            "recall": 0.5927272439002991,
+            "f1": 0.6612576246261597
+          },
+          "10": {
+            "precision": 0.9528177976608276,
+            "recall": 0.936855673789978,
+            "f1": 0.9447693228721619
+          },
+          "11": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0
+          },
+          "12": {
+            "precision": 0.48148149251937866,
+            "recall": 0.09653465449810028,
+            "f1": 0.1608247458934784
+          }
+        }
+      },
+      "test_metrics": null,
+      "validation_split": "chronological 80/20 holdout per recording; recordings may share drivers, so this is not subject-independent validation",
+      "weights": "models/trained/distraction.pt",
+      "training": {
+        "architecture": "mobilenet_v3_large",
+        "pretrained": true,
+        "initialization": "imagenet",
+        "frozen_backbone_epochs": 2,
+        "backbone_lr_scale": 0.1,
+        "epochs_run": 14
+      }
+    }
+  },
+  "seed": 42,
+  "pretrained": true,
+  "device": "cuda"
+}

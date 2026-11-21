@@ -188,14 +188,47 @@ def test_t1_escalates_to_t2(rig: Rig) -> None:
 
 def test_silence_through_t3_sounds_alarm(rig: Rig) -> None:
     """VR-05 acceptance: staying silent through the prompts produces the alarm."""
-    alert = submit(rig)  # T2: say, repeat, escalate to T3: say, repeat, alarm
+    alert = submit(rig)  # T2: say, repeat, escalate to T3: say, repeat, then the alarm
     for _ in range(4):
         rig.reply(alert, "NONE", "")
         rig.advance(GAP)
-    assert [s["tier"] for s in rig.says()] == ["T2", "T2", "T3", "T3"]
+    assert [s["tier"] for s in rig.says()] == ["T2", "T2", "T3", "T3", "T3"]
+    assert rig.says()[-1]["audio_key"] == CFG["alarm_audio_key"]  # the alarm clip plays
     assert rig.hooks == [("alarm", "distraction", None)]
-    assert rig.am.active is None
+    assert rig.am.active is alert  # still waiting for an answer
     assert rig.statuses(alert).count("escalated") == 2
+
+
+def test_alarm_is_continuous_until_answered(rig: Rig) -> None:
+    alert = submit(rig, "microsleep", "T3")
+    for _ in range(2):  # say, repeat
+        rig.reply(alert, "NONE", "")
+        rig.advance(GAP)
+    for _ in range(3):  # three alarm rounds, no answer
+        assert rig.says()[-1]["audio_key"] == CFG["alarm_audio_key"]
+        rig.reply(alert, "NONE", "")
+        rig.advance(GAP)
+    rig.reply(alert, "OK", "I'm awake")
+    assert rig.statuses(alert)[-1] == "closed" and rig.am.active is None
+    assert rig.hooks == [("alarm", "microsleep", None)]  # the hook fires once, at the start
+
+
+def test_alarm_stops_after_its_rounds(rig: Rig) -> None:
+    alert = submit(rig, "microsleep", "T3")
+    for _ in range(2 + CFG["alarm_rounds"]):
+        rig.reply(alert, "NONE", "")
+        rig.advance(GAP)
+    alarms = [s for s in rig.says() if s.get("audio_key") == CFG["alarm_audio_key"]]
+    assert len(alarms) == CFG["alarm_rounds"]
+    assert rig.am.active is None  # gives up, so the queue can move on
+
+
+def test_alarm_rounds_also_time_out(rig: Rig) -> None:
+    """Without any voice reply at all, the deadlines drive the alarm too."""
+    alert = submit(rig, "microsleep", "T3")
+    rig.advance(3 * (FIRST_DEADLINE + GAP + 0.2))
+    assert alert.alarm_rounds >= 1
+    assert rig.says()[-1]["audio_key"] == CFG["alarm_audio_key"]
 
 
 def test_silence_after_crash_also_starts_emergency(rig: Rig) -> None:
