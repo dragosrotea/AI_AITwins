@@ -2,9 +2,12 @@
 
 import argparse
 import asyncio
+import logging
 import random
 from collections.abc import Awaitable, Callable
-from typing import Protocol
+from contextlib import nullcontext
+from pathlib import Path
+from typing import Protocol, TextIO
 
 FEATURE_PERIOD_S = 0.2
 REPLY_DELAY_S = 2.0
@@ -18,13 +21,13 @@ class VoiceBus(Protocol):
     async def publish(self, topic: str, data: dict) -> None: ...
 
 
-async def publish_reply(bus: VoiceBus, alert_id: str, lang: str) -> None:
+async def publish_reply(bus: VoiceBus, alert_id: str) -> None:
     await asyncio.sleep(REPLY_DELAY_S)
     await bus.publish(
         "voice.reply",
         {
             "alert_id": alert_id,
-            "transcript": "Da, sunt bine." if lang == "ro" else "Yes, I'm okay.",
+            "transcript": "Yes, I'm okay.",
             "intent": "OK",
             "latency_ms": random.randint(250, 950),
             "path": "keyword",
@@ -41,7 +44,7 @@ async def run_fake(bus: VoiceBus) -> None:
 
         async def on_say(envelope: dict) -> None:
             data = envelope["data"]
-            replies.create_task(publish_reply(bus, data["alert_id"], data["lang"]))
+            replies.create_task(publish_reply(bus, data["alert_id"]))
 
         bus.subscribe(["voice.say"], on_say)
 
@@ -67,7 +70,7 @@ async def run_fake(bus: VoiceBus) -> None:
             await asyncio.sleep(next_tick - now)
 
 
-async def run(fake: bool) -> None:
+async def run(fake: bool, latency_log: TextIO | None = None) -> None:
     from backend.bus.client import BusClient
 
     bus = BusClient("voice")
@@ -77,7 +80,7 @@ async def run(fake: bool) -> None:
         else:
             from .live import run_live
 
-            await run_live(bus)
+            await run_live(bus, latency_log)
     finally:
         await bus.close()
 
@@ -85,10 +88,22 @@ async def run(fake: bool) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--fake", action="store_true", help="Simulate voice without audio hardware")
+    parser.add_argument(
+        "--capture-diagnostics", action="store_true", help="Print live capture timings to stderr"
+    )
+    parser.add_argument("--latency-log", type=Path, help="Append live timing samples as JSONL")
     args = parser.parse_args()
+    if args.fake and args.latency_log is not None:
+        parser.error("--latency-log requires live mode")
+    if args.capture_diagnostics:
+        logging.basicConfig(format="%(message)s")
+        logging.getLogger("backend.voice.capture").setLevel(logging.INFO)
 
     try:
-        asyncio.run(run(args.fake))
+        with (
+            args.latency_log.open("a", encoding="utf-8") if args.latency_log else nullcontext()
+        ) as latency_log:
+            asyncio.run(run(args.fake, latency_log))
     except KeyboardInterrupt:
         pass
 

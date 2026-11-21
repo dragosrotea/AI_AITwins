@@ -73,24 +73,38 @@ class Microphone:
         self._sequence = 0
         self._stream: sd.RawInputStream | None = None
 
-    def _capture(self, data: Any, frames: int, _time: object, _status: object) -> None:
+    def _capture(self, data: Any, frames: int, timing: Any, _status: object) -> None:
         if frames != FRAME_SAMPLES:
             return
         ended_at = perf_counter()
+        adc_at = getattr(timing, "inputBufferAdcTime", 0)
+        if adc_at > 0:
+            ended_at += adc_at - timing.currentTime + FRAME_MS / 1000
         pcm = bytes(data)
         with self._lock:
             self._sequence += 1
             self._frames.append(AudioFrame(self._sequence, pcm, ended_at))
 
-    def cursor(self) -> int:
-        """Mark the latest frame, for example when a reply window opens."""
+    def cursor(self, *, after: float | None = None) -> int:
+        """Mark the latest frame or the frame just before a playback boundary."""
         with self._lock:
+            if after is not None:
+                for frame in self._frames:
+                    if frame.ended_at > after:
+                        return frame.sequence - 1
             return self._sequence
 
     def read_since(self, sequence: int) -> tuple[AudioFrame, ...]:
         """Read retained frames after sequence. A gap means older frames expired."""
         with self._lock:
             return tuple(frame for frame in self._frames if frame.sequence > sequence)
+
+    def describe_input(self) -> tuple[int, str]:
+        """Identify the input PortAudio opened, including when config uses the default."""
+        if self._stream is None:
+            raise RuntimeError("Microphone is not open")
+        index = self._stream.device
+        return index, sd.query_devices(index, "input")["name"]
 
     def __enter__(self) -> Self:
         if self._stream is not None:

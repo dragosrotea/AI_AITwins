@@ -1,4 +1,4 @@
-"""Capture one Romanian and one English sample from the configured microphone."""
+"""Capture an English sample from the configured microphone."""
 
 import argparse
 from time import monotonic, sleep
@@ -9,10 +9,7 @@ from .stt import Language, SpeechToText
 
 SAMPLE_SECONDS = 3
 SAMPLE_FRAMES = SAMPLE_SECONDS * 1000 // FRAME_MS
-SAMPLES: tuple[tuple[Language, str], ...] = (
-    ("ro", "Bună, mă simt bine astăzi."),
-    ("en", "Hello, I feel good today."),
-)
+SAMPLES: tuple[tuple[Language, str], ...] = (("en", "Hello, I feel good today."),)
 
 
 def capture_sample(mic: Microphone) -> bytes:

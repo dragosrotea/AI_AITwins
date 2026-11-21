@@ -1,0 +1,33 @@
+phrase_id,lang,category,intent,route,text
+en-01,en,yes,OK,keyword,"Yes, I'm okay."
+en-02,en,yes,OK,keyword,Yeah I'm fine.
+en-03,en,yes,OK,keyword,I'm good thanks.
+en-04,en,yes,OK,keyword,Sure I can answer.
+en-05,en,yes,OK,llm,I feel all right.
+en-06,en,yes,OK,llm,All good here.
+en-07,en,yes,OK,llm,Nothing to worry about.
+en-08,en,yes,OK,llm,Absolutely.
+en-09,en,no,NOT_OK,keyword,"No, I can't."
+en-10,en,no,NOT_OK,keyword,I'm not okay.
+en-11,en,no,NOT_OK,keyword,Not really.
+en-12,en,no,NOT_OK,keyword,I don't feel fine.
+en-13,en,no,NOT_OK,llm,I feel sick.
+en-14,en,no,NOT_OK,llm,Something feels wrong.
+en-15,en,no,NOT_OK,llm,I'm feeling dizzy.
+en-16,en,no,NOT_OK,llm,I can't do this right now.
+en-17,en,tired,NOT_OK,keyword,I'm tired.
+en-18,en,tired,NOT_OK,keyword,Yes but I'm too tired.
+en-19,en,tired,NOT_OK,keyword,No I'm getting sleepy.
+en-20,en,tired,NOT_OK,keyword,I'm not fine; I'm exhausted.
+en-21,en,tired,NOT_OK,llm,I'm struggling to stay awake.
+en-22,en,tired,NOT_OK,llm,I could really use a nap.
+en-23,en,tired,NOT_OK,llm,I'm worn out.
+en-24,en,tired,NOT_OK,llm,My eyes keep closing.
+en-25,en,help,HELP,keyword,Help me please.
+en-26,en,help,HELP,keyword,Could you call someone?
+en-27,en,help,HELP,keyword,"No, I need help."
+en-28,en,help,HELP,keyword,I'm tired and I need help.
+en-29,en,help,HELP,llm,Please get an ambulance.
+en-30,en,help,HELP,llm,Can you send somebody to assist me?
+en-31,en,help,HELP,llm,Ring emergency services.
+en-32,en,help,HELP,llm,I need urgent assistance.
