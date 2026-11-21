@@ -148,6 +148,12 @@ cv:
     model_path: models/trained/emotion.pt
     rate_hz: 5
     smoothing_alpha: 0.2
+  activity_models:
+    models_dir: models/trained
+    rate_hz: 5
+    distraction_threshold: 0.5
+    drowsiness_threshold: 0.5
+    phone_threshold: 0.5
   zoning:
     window_s: 60
     gaze_dispersion_deg: 2.0
