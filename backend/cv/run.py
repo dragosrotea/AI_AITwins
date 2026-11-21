@@ -316,6 +316,8 @@ def _driver_data(
     last_eye_closed_p: float = 0.0,
     anger_probability: float | None = None,
     phone_in_hand: bool = False,
+    activity_scores: dict[str, Any] | None = None,
+    model_blink: bool = False,
 ) -> dict[str, object]:
     data = _empty_driver_data(fps)
     if not result.face_present:
@@ -361,6 +363,14 @@ def _driver_data(
             float_setting(settings, "eye_state", "ear_closed_threshold"),
             float_setting(settings, "eye_state", "ear_open_threshold"),
         )
+    if activity_scores is not None:
+        eye_weight = float_setting(settings, "activity_models", "eye_closed_blend_weight")
+        if not 0.0 <= eye_weight <= 1.0:
+            raise ValueError("CV activity eye-closed blend weight must be between 0 and 1")
+        eye_closed_p = (
+            (1.0 - eye_weight) * eye_closed_p
+            + eye_weight * activity_scores["eye_closed_model_p"]
+        )
     data = {
         **data,
         "face_present": True,
@@ -379,13 +389,15 @@ def _driver_data(
             head_pose=(geometry.yaw, geometry.pitch),
             mouth_aspect=geometry.mouth_aspect_ratio,
             blendshapes=result.blendshapes,
+            yawn_model_p=(activity_scores["yawn_model_p"] if activity_scores else None),
+            model_blink=model_blink,
         )
     if anger_probability is not None:
         data["anger_p"] = min(1.0, max(0.0, anger_probability))
     return data
 
 
-def _activity_scores(predictions: dict[str, Any]) -> dict[str, float]:
+def _activity_scores(predictions: dict[str, Any]) -> dict[str, Any]:
     """Map trained multilabel outputs to the app's distraction, fatigue, and phone cues."""
     distraction = predictions.get("distraction", {}).get("probabilities", {})
     drowsiness = predictions.get("drowsiness", {}).get("probabilities", {})
@@ -396,23 +408,28 @@ def _activity_scores(predictions: dict[str, Any]) -> dict[str, float]:
         for label, score in distraction.items()
         if label not in {"driver_actions/safe_drive", "driver_actions/unclassified"}
     ]
-    fatigue_classes = (
-        "eyes_state/close",
-        "eyes_state/closing",
-        "yawning/Yawning with hand",
-        "yawning/Yawning without hand",
-    )
     phone_classes = (
         "driver_actions/phonecall_left",
         "driver_actions/phonecall_right",
         "driver_actions/texting_left",
         "driver_actions/texting_right",
     )
+    eye_close = max(
+        drowsiness.get("eyes_state/close", 0.0),
+        0.5 * drowsiness.get("eyes_state/closing", 0.0),
+    )
+    yawn = max(
+        drowsiness.get("yawning/Yawning with hand", 0.0),
+        drowsiness.get("yawning/Yawning without hand", 0.0),
+    )
     return {
         "distraction_model_p": max(risk_actions, default=0.0),
-        "drowsiness_model_p": max(
-            (drowsiness.get(label, 0.0) for label in fatigue_classes), default=0.0
-        ),
+        "distraction_action_probabilities": distraction,
+        "drowsiness_class_probabilities": drowsiness,
+        "eye_closed_model_p": eye_close,
+        "blink_model_p": drowsiness.get("blinks/blinking", 0.0),
+        "yawn_model_p": yawn,
+        "drowsiness_model_p": max(eye_close, yawn),
         "phone_model_p": max(
             (distraction.get(label, 0.0) for label in phone_classes), default=0.0
         ),
@@ -499,8 +516,19 @@ def run_live(
     next_preview_publish = 0.0
     frame_times: deque[float] = deque()
     last_eye_closed_p = 0.0
-    activity_scores = {"distraction_model_p": 0.0, "drowsiness_model_p": 0.0, "phone_model_p": 0.0}
+    activity_scores = {
+        "distraction_model_p": 0.0,
+        "drowsiness_model_p": 0.0,
+        "phone_model_p": 0.0,
+        "distraction_action_probabilities": {},
+        "drowsiness_class_probabilities": {},
+        "eye_closed_model_p": 0.0,
+        "blink_model_p": 0.0,
+        "yawn_model_p": 0.0,
+    }
+    activity_scores_available = False
     last_activity_sample = -math.inf
+    model_blink_active = False
 
     def stop(_signum: int, _frame: object) -> None:
         nonlocal running
@@ -534,17 +562,48 @@ def run_live(
                     fps = (len(frame_times) - 1) / elapsed
 
             result = landmarker.process(frame)
-            if activity_models is not None and now - last_activity_sample >= 1.0 / activity_rate_hz:
+            model_blink_event = False
+            if (
+                activity_models is not None
+                and now - last_activity_sample >= 1.0 / activity_rate_hz
+            ):
                 last_activity_sample = now
                 try:
                     activity_scores = _activity_scores(activity_models.predict_frame(frame))
+                    activity_scores_available = True
+                    blink_threshold = float_setting(
+                        settings, "activity_models", "blink_threshold"
+                    )
+                    blink_rearm = float_setting(
+                        settings, "activity_models", "blink_rearm_threshold"
+                    )
+                    if not 0.0 <= blink_rearm < blink_threshold <= 1.0:
+                        raise ValueError(
+                            "CV activity blink thresholds must satisfy "
+                            "0 <= rearm < threshold <= 1"
+                        )
+                    model_blink_event = (
+                        not model_blink_active
+                        and activity_scores["blink_model_p"] >= blink_threshold
+                    )
+                    if activity_scores["blink_model_p"] >= blink_threshold:
+                        model_blink_active = True
+                    elif activity_scores["blink_model_p"] <= blink_rearm:
+                        model_blink_active = False
                 except Exception:
                     log.debug("Activity models failed on frame", exc_info=True)
                     activity_scores = {
                         "distraction_model_p": 0.0,
                         "drowsiness_model_p": 0.0,
                         "phone_model_p": 0.0,
+                        "distraction_action_probabilities": {},
+                        "drowsiness_class_probabilities": {},
+                        "eye_closed_model_p": 0.0,
+                        "blink_model_p": 0.0,
+                        "yawn_model_p": 0.0,
                     }
+                    activity_scores_available = False
+                    model_blink_active = False
             if (
                 anger_model is not None
                 and result.face_present
@@ -572,6 +631,8 @@ def run_live(
                     and activity_scores["phone_model_p"]
                     >= float_setting(settings, "activity_models", "phone_threshold")
                 ),
+                activity_scores=(activity_scores if activity_scores_available else None),
+                model_blink=model_blink_event,
             )
             last_eye_closed_p = float(data["eye_closed_p"])
             for event in event_detector.update({**data, **activity_scores}, now):
