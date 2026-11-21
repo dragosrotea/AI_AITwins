@@ -19,6 +19,7 @@ from backend.cv.eye_crops import crop_eyes
 from backend.cv.eye_state import EyeStateModel
 from backend.cv.face_landmarks import FaceLandmarker
 from backend.cv.geometry import BlinkDetector, FaceGeometry, extract_geometry
+from backend.cv.model_pipeline import FourModelPipeline
 from backend.cv.settings import (
     DEFAULT_CONFIG,
     float_setting,
@@ -314,6 +315,7 @@ def _driver_data(
     timestamp: float | None = None,
     last_eye_closed_p: float = 0.0,
     anger_probability: float | None = None,
+    phone_in_hand: bool = False,
 ) -> dict[str, object]:
     data = _empty_driver_data(fps)
     if not result.face_present:
@@ -363,6 +365,7 @@ def _driver_data(
         **data,
         "face_present": True,
         "eye_closed_p": eye_closed_p,
+        "phone_in_hand": phone_in_hand,
         "head": {"yaw": geometry.yaw, "pitch": geometry.pitch, "roll": geometry.roll},
     }
     if state_metrics is not None:
@@ -380,6 +383,40 @@ def _driver_data(
     if anger_probability is not None:
         data["anger_p"] = min(1.0, max(0.0, anger_probability))
     return data
+
+
+def _activity_scores(predictions: dict[str, Any]) -> dict[str, float]:
+    """Map trained multilabel outputs to the app's distraction, fatigue, and phone cues."""
+    distraction = predictions.get("distraction", {}).get("probabilities", {})
+    drowsiness = predictions.get("drowsiness", {}).get("probabilities", {})
+    if not isinstance(distraction, dict) or not isinstance(drowsiness, dict):
+        raise ValueError("Activity models must return multilabel probabilities")
+    risk_actions = [
+        score
+        for label, score in distraction.items()
+        if label not in {"driver_actions/safe_drive", "driver_actions/unclassified"}
+    ]
+    fatigue_classes = (
+        "eyes_state/close",
+        "eyes_state/closing",
+        "yawning/Yawning with hand",
+        "yawning/Yawning without hand",
+    )
+    phone_classes = (
+        "driver_actions/phonecall_left",
+        "driver_actions/phonecall_right",
+        "driver_actions/texting_left",
+        "driver_actions/texting_right",
+    )
+    return {
+        "distraction_model_p": max(risk_actions, default=0.0),
+        "drowsiness_model_p": max(
+            (drowsiness.get(label, 0.0) for label in fatigue_classes), default=0.0
+        ),
+        "phone_model_p": max(
+            (distraction.get(label, 0.0) for label in phone_classes), default=0.0
+        ),
+    }
 
 
 def run_live(
@@ -416,6 +453,16 @@ def run_live(
     blink_detector = BlinkDetector(closed_ear, open_ear)
     state_metrics = DriverStateMetrics(settings)
     event_detector = VisualEventDetector(settings)
+    activity_settings = settings.get("activity_models")
+    if not isinstance(activity_settings, dict):
+        raise ValueError("Missing CV setting activity_models")
+    activity_models = FourModelPipeline(
+        resolved_path(string_setting(settings, "activity_models", "models_dir")),
+        tasks=("drowsiness", "distraction"),
+    )
+    activity_rate_hz = float_setting(settings, "activity_models", "rate_hz")
+    if activity_rate_hz <= 0:
+        raise ValueError("CV activity model rate must be positive")
     anger_model_path = resolved_path(string_setting(settings, "anger_model", "model_path"))
     anger_model: EmotionModel | None = None
     if anger_model_path.is_file():
@@ -445,6 +492,8 @@ def run_live(
     next_preview_publish = 0.0
     frame_times: deque[float] = deque()
     last_eye_closed_p = 0.0
+    activity_scores = {"distraction_model_p": 0.0, "drowsiness_model_p": 0.0, "phone_model_p": 0.0}
+    last_activity_sample = -math.inf
 
     def stop(_signum: int, _frame: object) -> None:
         nonlocal running
@@ -478,6 +527,17 @@ def run_live(
                     fps = (len(frame_times) - 1) / elapsed
 
             result = landmarker.process(frame)
+            if now - last_activity_sample >= 1.0 / activity_rate_hz:
+                last_activity_sample = now
+                try:
+                    activity_scores = _activity_scores(activity_models.predict_frame(frame))
+                except Exception:
+                    log.debug("Activity models failed on frame", exc_info=True)
+                    activity_scores = {
+                        "distraction_model_p": 0.0,
+                        "drowsiness_model_p": 0.0,
+                        "phone_model_p": 0.0,
+                    }
             if (
                 anger_model is not None
                 and result.face_present
@@ -500,9 +560,14 @@ def run_live(
                 timestamp=now,
                 last_eye_closed_p=last_eye_closed_p,
                 anger_probability=(anger_probability if anger_model is not None else None),
+                phone_in_hand=(
+                    result.face_present
+                    and activity_scores["phone_model_p"]
+                    >= float_setting(settings, "activity_models", "phone_threshold")
+                ),
             )
             last_eye_closed_p = float(data["eye_closed_p"])
-            for event in event_detector.update(data, now):
+            for event in event_detector.update({**data, **activity_scores}, now):
                 validated_event = validate("detector.event", event).model_dump(mode="json")
                 publisher.publish("detector.event", validated_event)
             if now >= next_state_publish:

@@ -337,11 +337,23 @@ class VisualEventDetector:
         self._perclos_threshold = _float_value(settings, "perclos_threshold")
         self._yawn_count = _integer_value(settings, "yawn_count", minimum=1)
         self._no_face_warning_s = _float_value(settings, "no_face_warning_s")
+        self._phone_hold_s = _float_value(settings, "phone_hold_s")
+        activity_models = settings.get("activity_models")
+        if not isinstance(activity_models, dict):
+            raise ValueError("Missing or invalid CV setting activity_models")
+        self._model_distraction_threshold = float_setting(
+            settings, "activity_models", "distraction_threshold"
+        )
+        self._model_drowsiness_threshold = float_setting(
+            settings, "activity_models", "drowsiness_threshold"
+        )
+        self._phone_threshold = float_setting(settings, "activity_models", "phone_threshold")
         self._cooldown_s = float_setting(settings, "visual_events", "cooldown_s")
         for name, value in (
             ("eyes_off_s", self._distraction_hold_s),
             ("microsleep_s", self._microsleep_s),
             ("no_face_warning_s", self._no_face_warning_s),
+            ("phone_hold_s", self._phone_hold_s),
             ("visual_events.cooldown_s", self._cooldown_s),
         ):
             if value <= 0:
@@ -360,15 +372,37 @@ class VisualEventDetector:
         eyes_closed_ms = int(state["eyes_closed_ms"])
         perclos = float(state["perclos_60s"])
         yawns = int(state["yawns_10m"])
-        if not all(math.isfinite(value) for value in (yaw, pitch, perclos)):
+        distraction_model_p = float(state.get("distraction_model_p", 0.0))
+        drowsiness_model_p = float(state.get("drowsiness_model_p", 0.0))
+        phone_model_p = float(state.get("phone_model_p", 0.0))
+        if not all(
+            math.isfinite(value)
+            for value in (
+                yaw,
+                pitch,
+                perclos,
+                distraction_model_p,
+                drowsiness_model_p,
+                phone_model_p,
+            )
+        ):
             raise ValueError("Visual event signals must be finite")
 
         conditions = {
             "distraction": face_present
-            and (abs(yaw) > self._yaw_threshold or pitch < self._pitch_threshold),
+            and (
+                abs(yaw) > self._yaw_threshold
+                or pitch < self._pitch_threshold
+                or distraction_model_p >= self._model_distraction_threshold
+            ),
             "microsleep": face_present and eyes_closed_ms >= self._microsleep_s * 1000,
             "drowsiness": face_present
-            and (perclos >= self._perclos_threshold or yawns >= self._yawn_count),
+            and (
+                perclos >= self._perclos_threshold
+                or yawns >= self._yawn_count
+                or drowsiness_model_p >= self._model_drowsiness_threshold
+            ),
+            "phone": face_present and phone_model_p >= self._phone_threshold,
             "no_face": not face_present,
         }
         for event_type, active in conditions.items():
@@ -386,28 +420,37 @@ class VisualEventDetector:
             "microsleep": conditions["microsleep"],
             "drowsiness": conditions["drowsiness"],
             "no_face": elapsed.get("no_face", 0.0) >= self._no_face_warning_s,
+            "phone": elapsed.get("phone", 0.0) >= self._phone_hold_s,
         }
         tiers = {
             "distraction": "T2",
             "microsleep": "T3",
             "drowsiness": "T2",
             "no_face": "T2",
+            "phone": "T2",
         }
         scores = {
             "distraction": 70.0,
             "microsleep": 95.0,
             "drowsiness": 70.0,
             "no_face": 70.0,
+            "phone": 85.0,
         }
         signals = {
             "distraction": {
                 "yaw": yaw,
                 "pitch": pitch,
+                "model_p": distraction_model_p,
                 "held_s": elapsed.get("distraction", 0.0),
             },
             "microsleep": {"eyes_closed_ms": eyes_closed_ms},
-            "drowsiness": {"perclos_60s": perclos, "yawns_10m": yawns},
+            "drowsiness": {
+                "perclos_60s": perclos,
+                "yawns_10m": yawns,
+                "model_p": drowsiness_model_p,
+            },
             "no_face": {"face_absent_s": elapsed.get("no_face", 0.0)},
+            "phone": {"phone_p": phone_model_p, "held_s": elapsed.get("phone", 0.0)},
         }
 
         events = []

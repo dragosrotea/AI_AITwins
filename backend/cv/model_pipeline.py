@@ -21,9 +21,12 @@ class FourModelPipeline:
         models_dir: str | Path = DEFAULT_MODELS_DIR,
         device: str = "auto",
         multilabel_threshold: float = 0.5,
+        tasks: tuple[str, ...] = MODEL_NAMES,
     ) -> None:
         if not 0.0 <= multilabel_threshold <= 1.0:
             raise ValueError("multilabel_threshold must be between 0 and 1")
+        if not tasks or any(task not in MODEL_NAMES for task in tasks):
+            raise ValueError(f"tasks must be a non-empty subset of {MODEL_NAMES}")
         try:
             import torch
             from PIL import Image
@@ -42,6 +45,7 @@ class FourModelPipeline:
             device = "cuda" if torch.cuda.is_available() else "cpu"
         self.device = torch.device(device)
         self.multilabel_threshold = multilabel_threshold
+        self.tasks = tasks
         self.models: dict[str, Any] = {}
         self.metadata: dict[str, dict[str, Any]] = {}
         self.transform = transforms.Compose(
@@ -59,7 +63,7 @@ class FourModelPipeline:
 
     def _load(self, models_dir: Path) -> None:
         torch = self._torch
-        for task in MODEL_NAMES:
+        for task in self.tasks:
             path = models_dir / f"{task}.pt"
             if not path.is_file():
                 raise FileNotFoundError(
