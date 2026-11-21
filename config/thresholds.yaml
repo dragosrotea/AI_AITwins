@@ -261,14 +261,8 @@ profiles:
         weights: {visual: 1.0, monotony: 0.3}  # ZO-01: a 30 s stare alone crosses the threshold
         engagement_interval_s: 60
         engagement_window_s: 300
-      checkin:
-        base_interval_min: 3
-        min_interval_min: 1
-        max_interval_min: 5
-        break_every_min: 5
-        break_risk_min: 4
-        event_lookback_min: 2
-        quiet_min: 3
+      # Check-ins keep their real values: demo step 1 shows "every 15 min, break at 1:45"
+      # (5 h sleep), and none should interrupt steps 2-6 (LEAD-T21).
     cv:
       perclos_window_s: 30         # DD-03: show within 60 s in demo mode
       yawn_window_s: 120

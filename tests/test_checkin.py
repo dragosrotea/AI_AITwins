@@ -233,8 +233,8 @@ def test_nothing_before_a_trip_and_after_stop() -> None:
     assert rig.spoken("checkin_due") == []
 
 
-def test_demo_profile_shows_within_minutes() -> None:
+def test_demo_profile_shows_the_script_values() -> None:
+    """Demo step 1: 5 h sleep shows check-ins every 15 min and a break at 1:45 (LEAD-T21)."""
     demo = load_config("demo")["core"]["checkin"]
-    minutes, _ = base_interval(pretrip(sleep_h=5), at(21), demo)
-    assert minutes <= 2  # a check-in inside a 5-minute demo
-    assert demo["break_risk_min"] <= 5
+    minutes, risk = base_interval(pretrip(sleep_h=5), at(21), demo)
+    assert minutes == 15 and risk and demo["break_risk_min"] == 105
