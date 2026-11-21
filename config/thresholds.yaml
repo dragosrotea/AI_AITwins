@@ -78,6 +78,16 @@ core:
     crash_g: 5.0
     crash_spike_s: 0.2             # how long the crash spike lasts
     crash_stop_s: 3                # speed ramps to 0 within this, then stays 0 (CR-01)
+  routing:                         # LEAD-T15: CV detector.event type -> alert tier
+    tiers:
+      distraction: T2              # DD-01
+      microsleep: T3               # DD-02
+      drowsiness: T2               # DD-03 (with a break suggestion)
+      phone: T2                    # PH-02
+      no_face: T2                  # CV-06
+    cancels:                       # DD-04: tired drivers get a break, not a game
+      drowsiness: [zoning_out]
+      microsleep: [zoning_out]
   triplog:                         # LEAD-T12, AL-04: one JSONL file per trip, kept local
     dir: logs
     topics: [detector.event, alert.state, voice.say, voice.status, voice.reply, control.music,

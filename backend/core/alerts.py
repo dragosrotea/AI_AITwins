@@ -130,6 +130,17 @@ class AlertManager:
             self._start_next()
         return alert
 
+    def cancel_queued(self, types: list[str]) -> list[Alert]:
+        """Drop queued (not active) alerts of these types, published as closed. DD-04 uses it
+        so tired drivers get a break, not trivia. The active alert is left to finish: voice
+        ignores a non-T3 interruption, and a T3 pre-empts on its own."""
+        dropped = [a for a in self.queue if a.type in types]
+        for alert in dropped:
+            self.queue.remove(alert)
+            log.info("cancel queued %s %s", alert.tier, alert.type)
+            self._set_status(alert, "closed")
+        return dropped
+
     # Input: voice
 
     def _is_current(self, data: dict[str, Any]) -> bool:

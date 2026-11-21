@@ -257,7 +257,7 @@ def attach_alerts(
         except (ValidationError, KeyError) as error:
             log.warning("ignored bad detector.event from %s: %s", envelope.get("src"), error)
             return
-        handle_detector_event(envelope, manager)  # LEAD-T11
+        handle_detector_event(envelope, manager, cfg["core"]["routing"])  # LEAD-T11, T15
 
     bus.subscribe(["detector.event"], on_detector_event)
     return manager
