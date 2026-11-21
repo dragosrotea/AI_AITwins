@@ -1,0 +1,6 @@
+torch
+torchvision
+Pillow
+opencv-python
+onnx>=1.15
+onnxruntime>=1.17

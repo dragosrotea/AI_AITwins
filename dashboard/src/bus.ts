@@ -1,9 +1,6 @@
-export interface Envelope<T = unknown> {
-  topic: string
-  ts: number
-  src: string
-  data: T
-}
+import type { Envelope, Topic, TopicDataMap } from './types'
+
+export type { Envelope } from './types'
 
 export interface SeriesPoint {
   ts: number
@@ -104,6 +101,18 @@ class BusStore {
     return this.series.get(key)?.snapshot() ?? []
   }
 
+  publish<K extends Topic>(topic: K, data: TopicDataMap[K]) {
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return false
+    this.socket.send(JSON.stringify({
+      op: 'pub',
+      topic,
+      ts: Date.now() / 1000,
+      src: 'ui',
+      data,
+    }))
+    return true
+  }
+
   private connect() {
     if (!this.started) return
     this.setStatus(this.reconnectDelay === INITIAL_RECONNECT_MS ? 'connecting' : 'reconnecting')
@@ -173,6 +182,6 @@ class BusStore {
   }
 }
 
-const defaultUrl = import.meta.env.VITE_BUS_URL || 'ws://localhost:8765/bus'
-export const bus = new BusStore(defaultUrl)
+export const busUrl = import.meta.env.VITE_BUS_URL || 'ws://localhost:8765/bus'
+export const bus = new BusStore(busUrl)
 bus.start()
