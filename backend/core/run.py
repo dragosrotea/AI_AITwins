@@ -170,11 +170,17 @@ def checked(topic: str, handler: Any) -> Any:
 
     def on_message(envelope: dict[str, Any]) -> None:
         try:
-            validate(topic, envelope["data"])
+            data = envelope["data"]
+            if topic == "control.trip" and isinstance(data, dict):
+                pretrip = data.get("pretrip")
+                if isinstance(pretrip, dict) and pretrip.get("lang", "en") in ("en", "ro"):
+                    # Keep legacy compatibility local to Core; the published contract keeps lang.
+                    data = {**data, "pretrip": {**pretrip, "lang": "en"}}
+            validate(topic, data)
         except (ValidationError, KeyError) as error:
             log.warning("ignored bad %s: %s", topic, error)
             return
-        handler(envelope["data"])
+        handler(data)
 
     return on_message
 
@@ -272,13 +278,6 @@ def attach_alerts(
     )
     bus.subscribe(["voice.status"], checked("voice.status", manager.on_voice_status))
     bus.subscribe(["voice.reply"], checked("voice.reply", manager.on_voice_reply))
-
-    def on_trip(data: dict[str, Any]) -> None:
-        if data["action"] == "start" and data.get("pretrip"):
-            manager.lang = data["pretrip"]["lang"]
-            log.info("driver language: %s", manager.lang)
-
-    bus.subscribe(["control.trip"], checked("control.trip", on_trip))
 
     writer = AlertWriter(cfg["core"]["alerts"]["llm_timeout_s"], TEMPLATES)
     router = EventRouter(manager, cfg["core"]["routing"], writer)

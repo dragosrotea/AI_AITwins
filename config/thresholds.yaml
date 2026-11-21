@@ -30,7 +30,7 @@ core:
       road_rage: 0.7               # RR-06: lower the music by 30%, then speak
     speak_max_s: 15                # longest wait for voice to finish speaking before counting
     voice_gap_s: 0.5               # pause before the next voice.say: voice drops non-T3 while busy
-    default_lang: en               # until control.trip sets the driver's language
+    default_lang: en               # English-only runtime
     cooldown_s:                    # LEAD-T14: per type, from one accepted alert to the next
       distraction: 60
       phone: 60
