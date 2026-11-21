@@ -50,5 +50,11 @@ def handle_detector_event(envelope: dict[str, Any], manager: AlertManager) -> Al
     signals = {"event_id": data["event_id"], "score": data["score"], **data.get("signals", {})}
     alert = manager.submit(kind, tier, text, short_text=short, signals=signals)
     if alert is not None:
-        log.info("detector.event %s (score %.0f) -> %s alert %s", kind, data["score"], tier, alert.alert_id)
+        log.info(
+            "detector.event %s (score %.0f) -> %s alert %s",
+            kind,
+            data["score"],
+            tier,
+            alert.alert_id,
+        )
     return alert

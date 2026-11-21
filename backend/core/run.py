@@ -8,8 +8,8 @@ cycles one alert every core.fake.alert_every_s through queued, speaking, listeni
 with voice.say, control.music and checkin.schedule, so voice and the dashboard have a partner.
 A voice.reply for the active alert closes it; otherwise it closes after listen_s + reply_grace_s.
 Live mode replays UAH-DriveSet (backend/core/vehicle.py) and obeys control.replay; without the
-dataset it falls back to the synthetic drive. The Alert Manager (LEAD-T10) runs alongside; detector
-events start feeding it with LEAD-T11.
+dataset it falls back to the synthetic drive. The Alert Manager (LEAD-T10) runs alongside and CV
+distraction events become T2 alerts (LEAD-T11, backend/core/events.py).
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ from pydantic import ValidationError
 from backend.bus.client import BusClient
 from backend.config import get_config
 from backend.core.alerts import Alert, AlertManager
+from backend.core.events import handle_detector_event
 from backend.core.vehicle import Injector, Player, load_trips
 from backend.schemas import validate
 
@@ -219,6 +220,17 @@ def attach_alerts(bus: BusClient, cfg: dict[str, Any]) -> AlertManager:
             log.info("driver language: %s", manager.lang)
 
     bus.subscribe(["control.trip"], checked("control.trip", on_trip))
+
+    def on_detector_event(envelope: dict[str, Any]) -> None:
+        # Needs the envelope (src), so it validates here instead of through checked().
+        try:
+            validate("detector.event", envelope["data"])
+        except (ValidationError, KeyError) as error:
+            log.warning("ignored bad detector.event from %s: %s", envelope.get("src"), error)
+            return
+        handle_detector_event(envelope, manager)  # LEAD-T11
+
+    bus.subscribe(["detector.event"], on_detector_event)
     return manager
 
 
