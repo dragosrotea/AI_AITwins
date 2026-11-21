@@ -72,7 +72,8 @@ core:
     harsh_brake_g: -0.6            # LEAD-T09
     harsh_brake_s: 1.5
     crash_g: 5.0
-    crash_stop_s: 3
+    crash_spike_s: 0.2             # how long the crash spike lasts
+    crash_stop_s: 3                # speed ramps to 0 within this, then stays 0 (CR-01)
   fake:                            # core --fake (LEAD-T06): synthetic drive and alert cycle
     alert_every_s: 15
     speak_s: 3

@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import logging
 import math
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -171,3 +173,64 @@ class Player:
             self.position_s,
             "playing" if self.playing else "paused",
         )
+
+
+class Injector:
+    """Overlay demo events on vehicle.motion samples (LEAD-T09), triggered by control.inject.
+
+    harsh_brake: add harsh_brake_g to accel_long_g for harsh_brake_s (speed is left alone).
+    crash: accel_long_g = -crash_g for crash_spike_s, while speed ramps linearly from its value
+    at impact to 0 over crash_stop_s; then the car stays stopped with its position frozen until
+    clear(), which core calls on the next control.replay message.
+    """
+
+    def __init__(self, cfg: dict[str, Any], clock: Callable[[], float] = time.monotonic) -> None:
+        self.cfg = cfg
+        self.clock = clock
+        self.brake_until = -math.inf
+        self.crash_at: float | None = None
+        self.impact: dict[str, Any] | None = None  # sample at the moment of the crash
+
+    @property
+    def crashed(self) -> bool:
+        return self.crash_at is not None
+
+    def inject(self, event: str) -> None:
+        now = self.clock()
+        if event == "harsh_brake":
+            self.brake_until = now + self.cfg["harsh_brake_s"]
+        elif event == "crash":
+            self.crash_at, self.impact = now, None
+        log.info("inject %s", event)
+
+    def clear(self) -> None:
+        self.brake_until = -math.inf
+        self.crash_at, self.impact = None, None
+
+    def apply(self, sample: dict[str, Any]) -> dict[str, Any]:
+        now = self.clock()
+        out = dict(sample)
+        if self.crash_at is not None:
+            out = self._crash(out, now - self.crash_at)
+        elif now < self.brake_until:
+            out["accel_long_g"] = round(out["accel_long_g"] + self.cfg["harsh_brake_g"], 3)
+        out["accel_mag_g"] = round(math.hypot(out["accel_long_g"], out["accel_lat_g"]), 3)
+        return out
+
+    def _crash(self, out: dict[str, Any], elapsed: float) -> dict[str, Any]:
+        if self.impact is None:
+            self.impact = dict(out)
+        cfg = self.cfg
+        # Stopped car: no motion, position frozen at the impact point.
+        out["lat"], out["lon"] = self.impact["lat"], self.impact["lon"]
+        out["accel_lat_g"] = 0.0
+        remaining = max(0.0, 1.0 - elapsed / cfg["crash_stop_s"])
+        if elapsed < cfg["crash_spike_s"]:
+            out["accel_long_g"] = -cfg["crash_g"]
+        elif remaining > 0:  # steady deceleration that matches the speed ramp
+            decel_g = self.impact["speed_kmh"] / 3.6 / cfg["crash_stop_s"] / 9.81
+            out["accel_long_g"] = round(-decel_g, 3)
+        else:
+            out["accel_long_g"] = 0.0
+        out["speed_kmh"] = round(self.impact["speed_kmh"] * remaining, 1)
+        return out

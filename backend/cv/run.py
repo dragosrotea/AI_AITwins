@@ -136,9 +136,66 @@ class CVPublisher:
         self._publisher.stop()
 
 
-def run_fake(sequence: str, broker_url: str, state_rate_hz: float) -> None:
+def _fake_camera_frame(width: int, jpeg_quality: int) -> dict[str, object]:
+    import cv2
+    import numpy as np
+
+    if width <= 0:
+        raise ValueError("Synthetic camera frame width must be positive")
+    if not 1 <= jpeg_quality <= 100:
+        raise ValueError("CV preview JPEG quality must be between 1 and 100")
+    height = max(1, round(width * 9 / 16))
+    frame = np.full((height, width, 3), (48, 54, 62), dtype=np.uint8)
+    center = (width // 2, height // 2)
+    scale = width / 320
+    cv2.ellipse(
+        frame,
+        center,
+        (round(32 * scale), round(40 * scale)),
+        0,
+        0,
+        360,
+        (180, 190, 202),
+        -1,
+    )
+    for eye_x in (center[0] - round(11 * scale), center[0] + round(11 * scale)):
+        cv2.circle(
+            frame,
+            (eye_x, center[1] - round(5 * scale)),
+            max(1, round(2 * scale)),
+            (40, 45, 50),
+            -1,
+        )
+    cv2.ellipse(
+        frame,
+        (center[0], center[1] + round(12 * scale)),
+        (round(8 * scale), max(1, round(3 * scale))),
+        0,
+        0,
+        180,
+        (60, 65, 72),
+        2,
+    )
+    encoded_ok, encoded = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality])
+    if not encoded_ok:
+        raise RuntimeError("Could not encode synthetic camera.frame preview")
+    data = {"jpeg_b64": base64.b64encode(encoded).decode("ascii")}
+    return validate("camera.frame", data).model_dump(mode="json")
+
+
+def run_fake(
+    sequence: str,
+    broker_url: str,
+    state_rate_hz: float,
+    preview_rate_hz: float,
+    preview_width: int,
+    jpeg_quality: int,
+) -> None:
     if not math.isfinite(state_rate_hz) or state_rate_hz <= 0:
         raise ValueError("state_rate_hz must be positive")
+    if not math.isfinite(preview_rate_hz) or preview_rate_hz <= 0:
+        raise ValueError("preview_rate_hz must be positive")
+    preview = _fake_camera_frame(preview_width, jpeg_quality)
     publisher = CVPublisher(broker_url)
     publisher.start()
     generator = fake_sequences(sequence)
@@ -150,6 +207,7 @@ def run_fake(sequence: str, broker_url: str, state_rate_hz: float) -> None:
 
     interval = 1.0 / state_rate_hz
     next_publish = time.monotonic()
+    next_preview = next_publish
     try:
         signal.signal(signal.SIGINT, stop)
         signal.signal(signal.SIGTERM, stop)
@@ -157,6 +215,10 @@ def run_fake(sequence: str, broker_url: str, state_rate_hz: float) -> None:
             state = next(generator)
             data = validate("driver.state", state_dict(state)).model_dump(mode="json")
             publisher.publish("driver.state", data)
+            now = time.monotonic()
+            if now >= next_preview:
+                publisher.publish("camera.frame", preview)
+                next_preview = now + 1.0 / preview_rate_hz
             next_publish += interval
             sleep_for = next_publish - time.monotonic()
             if sleep_for > 0:
@@ -394,7 +456,9 @@ def _publish_preview(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="DriveMate computer-vision process")
-    parser.add_argument("--fake", action="store_true", help="Publish synthetic driver state")
+    parser.add_argument(
+        "--fake", action="store_true", help="Publish synthetic driver state and camera frames"
+    )
     parser.add_argument(
         "--sequence",
         choices=("normal", "eyes_closing", "looking_down", "angry", "staring", "all"),
@@ -424,6 +488,9 @@ def main() -> int:
             sequence,
             broker_url,
             state_rate_hz=float_setting(settings, "publisher", "state_rate_hz"),
+            preview_rate_hz=float_setting(settings, "preview", "rate_hz"),
+            preview_width=integer_setting(settings, "preview", "width", minimum=1),
+            jpeg_quality=integer_setting(settings, "preview", "jpeg_quality", minimum=1),
         )
         return 0
     run_live(settings, broker_url, args.camera)

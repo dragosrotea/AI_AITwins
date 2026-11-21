@@ -27,7 +27,7 @@ from pydantic import ValidationError
 
 from backend.bus.client import BusClient
 from backend.config import get_config
-from backend.core.vehicle import Player, load_trips
+from backend.core.vehicle import Injector, Player, load_trips
 from backend.schemas import validate
 
 log = logging.getLogger("core")
@@ -69,6 +69,7 @@ class FakeCore:
         self.alerts = cfg["core"]["alerts"]
         self.checkin = cfg["core"]["checkin"]
         self.rate_hz = cfg["core"]["vehicle"]["rate_hz"]
+        self.injector = attach_injector(bus, cfg)
         self.replies: dict[str, asyncio.Future[dict[str, Any]]] = {}
 
     def on_reply(self, envelope: dict[str, Any]) -> None:
@@ -89,7 +90,9 @@ class FakeCore:
         started = time.monotonic()
         speed = self.fake["speed_kmh"]
         await publish_at_rate(
-            self.bus, self.rate_hz, lambda: vehicle_sample(time.monotonic() - started, speed)
+            self.bus,
+            self.rate_hz,
+            lambda: self.injector.apply(vehicle_sample(time.monotonic() - started, speed)),
         )
 
     async def publish_schedule(self) -> None:
@@ -154,6 +157,29 @@ class FakeCore:
             self.replies.pop(alert_id, None)
 
 
+def checked(topic: str, handler: Any) -> Any:
+    """Wrap a bus handler so it only sees data that matches the contract."""
+
+    def on_message(envelope: dict[str, Any]) -> None:
+        try:
+            validate(topic, envelope["data"])
+        except (ValidationError, KeyError) as error:
+            log.warning("ignored bad %s: %s", topic, error)
+            return
+        handler(envelope["data"])
+
+    return on_message
+
+
+def attach_injector(bus: BusClient, cfg: dict[str, Any]) -> Injector:
+    """control.inject triggers events (LEAD-T09); any control.replay clears them (e.g. a crash)."""
+    injector = Injector(cfg["core"]["inject"])
+    on_inject = checked("control.inject", lambda data: injector.inject(data["event"]))
+    bus.subscribe(["control.inject"], on_inject)
+    bus.subscribe(["control.replay"], checked("control.replay", lambda d: injector.clear()))
+    return injector
+
+
 async def publish_at_rate(bus: BusClient, rate_hz: float, next_sample: Any) -> None:
     """Publish next_sample() on vehicle.motion at rate_hz without drifting."""
     period = 1.0 / rate_hz
@@ -166,27 +192,21 @@ async def publish_at_rate(bus: BusClient, rate_hz: float, next_sample: Any) -> N
 
 async def run_live(bus: BusClient, cfg: dict[str, Any]) -> None:
     vehicle = cfg["core"]["vehicle"]
+    injector = attach_injector(bus, cfg)
     trips = load_trips(vehicle)
     if trips:
         player = Player(trips, vehicle["default_trip"], vehicle["loop"])
+        bus.subscribe(["control.replay"], checked("control.replay", player.control))
 
-        def on_replay(envelope: dict[str, Any]) -> None:
-            try:
-                validate("control.replay", envelope["data"])
-            except (ValidationError, KeyError) as error:
-                log.warning("ignored bad control.replay: %s", error)
-                return
-            player.control(envelope["data"])
-
-        bus.subscribe(["control.replay"], on_replay)
-        next_sample = player.step
+        def next_sample() -> dict[str, Any]:
+            return injector.apply(player.step())
     else:
         log.warning("no UAH-DriveSet trips found; publishing the synthetic drive (source sim)")
         started = time.monotonic()
         speed = cfg["core"]["fake"]["speed_kmh"]
 
         def next_sample() -> dict[str, Any]:
-            return vehicle_sample(time.monotonic() - started, speed)
+            return injector.apply(vehicle_sample(time.monotonic() - started, speed))
 
     await bus.connect()
     log.info("core live connected to %s", bus.url)

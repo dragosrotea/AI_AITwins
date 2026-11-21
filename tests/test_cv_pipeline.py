@@ -14,7 +14,9 @@ from backend.cv.geometry import BlinkDetector, extract_geometry
 from backend.cv.run import (
     _closed_probability_from_ear,
     _driver_data,
+    _fake_camera_frame,
     _publish_preview,
+    run_fake,
 )
 from backend.cv.settings import load_cv_settings
 from backend.schemas import validate
@@ -33,6 +35,52 @@ def test_config_has_live_camera_and_eye_settings() -> None:
     assert settings["eye_state"]["input_size"] == 64
     assert settings["preview"]["width"] == 320
     assert settings["eye_state"]["max_model_size_bytes"] == 5_000_000
+
+
+def test_fake_camera_frame_is_valid_contract_sized_jpeg() -> None:
+    import cv2
+
+    data = _fake_camera_frame(320, 60)
+    encoded = base64.b64decode(data["jpeg_b64"])
+    frame = cv2.imdecode(np.frombuffer(encoded, dtype=np.uint8), cv2.IMREAD_COLOR)
+
+    assert frame is not None
+    assert frame.shape[1] == 320
+    assert validate("camera.frame", data).jpeg_b64 == data["jpeg_b64"]
+
+
+def test_fake_mode_publishes_driver_state_and_camera_frame(monkeypatch) -> None:
+    messages = []
+    signal_handlers = []
+
+    class Publisher:
+        def __init__(self, _broker_url: str) -> None:
+            pass
+
+        def start(self) -> None:
+            pass
+
+        def publish(self, topic: str, data: dict[str, object]) -> None:
+            messages.append((topic, data))
+
+        def stop(self) -> None:
+            pass
+
+    monkeypatch.setattr("backend.cv.run.CVPublisher", Publisher)
+    monkeypatch.setattr(
+        "backend.cv.run.signal.signal",
+        lambda _signal, handler: signal_handlers.append(handler),
+    )
+    monkeypatch.setattr("backend.cv.run.time.monotonic", lambda: 0.0)
+    monkeypatch.setattr(
+        "backend.cv.run.time.sleep",
+        lambda _duration: signal_handlers[-1](None, None),
+    )
+
+    run_fake("normal", "ws://localhost:8765/bus", 10, 5, 320, 60)
+
+    assert [topic for topic, _data in messages] == ["driver.state", "camera.frame"]
+    assert validate("camera.frame", messages[1][1]).jpeg_b64
 
 
 def test_geometry_extracts_pose_iris_and_aspect_ratios() -> None:
