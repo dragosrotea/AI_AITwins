@@ -80,6 +80,15 @@ The evaluator uses the same deterministic subject split and the configured
 closed-eye threshold. It reports eye-state metrics only; yawn and expression
 metrics are added when those later models are trained.
 
+## CP3 yawn and expression status
+
+YawDD and FER2013 are not present in the current checkout, so CP3 currently
+uses the configured MediaPipe blendshape fallback for `yawn_p` and `anger_p`.
+These fallbacks are not dataset-trained models and do not satisfy the
+held-out-person yawn criterion or the FER2013 precision/recall criterion.
+Download the datasets under their terms, then train and evaluate those models
+before reporting the CP3 model-metrics gate as complete.
+
 ## Training the four-model pipeline
 
 The current local folders are `age_detection`, `emotion_detection`, and `dmd`.

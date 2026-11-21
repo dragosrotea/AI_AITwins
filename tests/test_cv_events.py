@@ -139,6 +139,86 @@ def test_gaze_dispersion_and_blink_rate_use_configured_rolling_windows(settings:
     assert third["gaze_dispersion_30s"] == 0.0
 
 
+def test_yawn_fallback_requires_a_sustained_open_mouth(settings: dict) -> None:
+    settings["yawn_window_s"] = 10.0
+    settings["yawn_fallback"]["hold_s"] = 0.5
+    settings["yawn_fallback"]["cooldown_s"] = 1.0
+    metrics = DriverStateMetrics(settings)
+    state = _state()
+    features = {"jawOpen": 0.95, "mouthStretchLeft": 0.8, "mouthStretchRight": 0.8}
+
+    assert metrics.update(state, 0.0, mouth_aspect=0.8, blendshapes=features)["yawns_10m"] == 0
+    assert metrics.update(state, 0.3, mouth_aspect=0.8, blendshapes=features)["yawns_10m"] == 0
+    closed = metrics.update(state, 0.4, mouth_aspect=0.1, blendshapes={})
+    assert closed["yawns_10m"] == 0
+    assert metrics.update(state, 1.0, mouth_aspect=0.8, blendshapes=features)["yawns_10m"] == 0
+    yawn = metrics.update(state, 1.5, mouth_aspect=0.8, blendshapes=features)
+
+    assert yawn["yawn_p"] > settings["yawn_fallback"]["score_threshold"]
+    assert yawn["yawns_10m"] == 1
+
+
+def test_anger_fallback_combines_and_smooths_blendshapes(settings: dict) -> None:
+    settings["anger_fallback"]["rate_hz"] = 10
+    settings["anger_fallback"]["smoothing_alpha"] = 0.5
+    metrics = DriverStateMetrics(settings)
+    state = _state()
+    features = {
+        "browDownLeft": 1.0,
+        "browDownRight": 1.0,
+        "mouthPressLeft": 1.0,
+        "mouthPressRight": 1.0,
+        "noseSneerLeft": 1.0,
+        "noseSneerRight": 1.0,
+    }
+
+    first = metrics.update(state, 0.0, blendshapes=features)
+    second = metrics.update(state, 0.1, blendshapes=features)
+    decay = metrics.update(_state(face_present=False), 0.2)
+
+    assert first["anger_p"] == pytest.approx(0.5)
+    assert second["anger_p"] == pytest.approx(0.75)
+    assert decay["anger_p"] == pytest.approx(0.375)
+
+
+def test_fallback_models_respect_configured_inference_rates(settings: dict) -> None:
+    settings["anger_fallback"]["smoothing_alpha"] = 1.0
+    settings["yawn_fallback"]["hold_s"] = 0.05
+    metrics = DriverStateMetrics(settings)
+    state = _state()
+    angry = {"browDownLeft": 1.0, "browDownRight": 1.0}
+    open_mouth = {"jawOpen": 1.0}
+
+    first = metrics.update(state, 0.0, mouth_aspect=0.8, blendshapes={**angry, **open_mouth})
+    skipped = metrics.update(state, 0.05, mouth_aspect=0.1, blendshapes={})
+    sampled = metrics.update(state, 0.1, mouth_aspect=0.1, blendshapes=angry)
+
+    assert first["yawn_p"] > 0.0
+    assert skipped["yawn_p"] == first["yawn_p"]
+    assert skipped["anger_p"] == first["anger_p"]
+    assert sampled["yawn_p"] == 0.0
+    assert sampled["anger_p"] == 0.35
+
+
+def test_zoning_score_requires_low_gaze_blink_and_head_motion(settings: dict) -> None:
+    settings["gaze_window_s"] = 2.0
+    settings["blink_window_s"] = 2.0
+    settings["zoning_stare_s"] = 2.0
+    settings["zoning"]["window_s"] = 2.0
+    metrics = DriverStateMetrics(settings)
+    state = _state()
+
+    first = metrics.update(state, 0.0, gaze=(0.0, 0.0), head_pose=(0.0, 0.0))
+    second = metrics.update(state, 1.0, gaze=(0.0, 0.0), head_pose=(0.0, 0.0))
+    third = metrics.update(state, 2.0, gaze=(0.0, 0.0), head_pose=(0.0, 0.0))
+    fourth = metrics.update(state, 3.0, gaze=(0.0, 0.0), head_pose=(0.0, 0.0))
+
+    assert first["zoning_visual_p"] == 0.0
+    assert second["zoning_visual_p"] == 0.0
+    assert 0.0 < third["zoning_visual_p"] < 1.0
+    assert fourth["zoning_visual_p"] == pytest.approx(1.0)
+
+
 def test_fake_live_loop_publishes_visual_detector_events(monkeypatch) -> None:
     messages = []
     signal_handlers = []

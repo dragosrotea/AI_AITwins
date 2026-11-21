@@ -356,6 +356,9 @@ def _driver_data(
             timestamp,
             gaze=(geometry.gaze_horizontal, geometry.gaze_vertical),
             blink=blink,
+            head_pose=(geometry.yaw, geometry.pitch),
+            mouth_aspect=geometry.mouth_aspect_ratio,
+            blendshapes=result.blendshapes,
         )
     return data
 
