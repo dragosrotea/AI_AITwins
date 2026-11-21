@@ -35,6 +35,7 @@ from backend.core.fusion import RageFusion
 from backend.core.triplog import TripLog
 from backend.core.vehicle import Injector, Player, load_trips
 from backend.core.wording import AlertWriter
+from backend.core.zoning import ZoningFusion
 from backend.schemas import validate
 
 log = logging.getLogger("core")
@@ -245,14 +246,14 @@ def attach_alerts(
     running: set[asyncio.Task[Any]] = set()
 
     async def grade(alert: Alert, reply: dict[str, Any]) -> None:
-        from backend.llm import grade_answer
-
-        assert alert.engagement_answer is not None
-        result = await grade_answer(alert.text, alert.engagement_answer, reply["transcript"])
-        if result is not None:
-            log.info("Trivia %s: %s", alert.alert_id, result["feedback"])
+        feedback = await router.answer_feedback(alert, reply)  # ZO-04: graded and said aloud
+        if feedback is not None:
+            log.info("Trivia %s: %s", alert.alert_id, feedback.text)
             if triplog is not None:
-                triplog.note("trivia_grade", {"alert_id": alert.alert_id, **result})
+                triplog.note(
+                    "trivia_grade",
+                    {"alert_id": alert.alert_id, "reply": reply["transcript"], **feedback.signals},
+                )
 
     def on_answer(alert: Alert, reply: dict[str, Any] | None) -> None:
         if reply is not None:
@@ -281,7 +282,7 @@ def attach_alerts(
     bus.subscribe(["control.trip"], checked("control.trip", on_trip))
 
     writer = AlertWriter(cfg["core"]["alerts"]["llm_timeout_s"], TEMPLATES)
-    router = EventRouter(manager, cfg["core"]["routing"], writer)
+    router = EventRouter(manager, cfg["core"]["routing"], writer, cfg["core"]["zoning"])
     bus.subscribe(["control.trip"], checked("control.trip", router.on_trip))
     bus.subscribe(["context.road"], checked("context.road", router.on_road))
 
@@ -359,6 +360,20 @@ def attach_fusion(bus: BusClient, cfg: dict[str, Any], triplog: TripLog) -> Rage
     return fusion
 
 
+def attach_zoning(bus: BusClient, cfg: dict[str, Any]) -> ZoningFusion:
+    """Zoning-out fusion (LEAD-T19). Core feeds it its own vehicle.motion samples directly."""
+
+    def emit(data: dict[str, Any]) -> None:
+        validate("detector.event", data)
+        bus.publish_nowait("detector.event", data)  # routed back to core's engagement path
+
+    zoning = ZoningFusion(cfg["core"]["zoning"], emit)
+    on_state = checked("driver.state", lambda d: zoning.on_driver_state(d, time.monotonic()))
+    bus.subscribe(["driver.state"], on_state)
+    bus.subscribe(["context.road"], checked("context.road", zoning.on_road))
+    return zoning
+
+
 async def tick_loop(manager: AlertManager, period_s: float = 0.1) -> None:
     while True:
         manager.tick()
@@ -371,6 +386,7 @@ async def run_live(bus: BusClient, cfg: dict[str, Any]) -> None:
     alerts, writer = attach_alerts(bus, cfg, triplog)
     checkins = attach_checkins(bus, cfg, alerts, writer)
     fusion = attach_fusion(bus, cfg, triplog)
+    zoning = attach_zoning(bus, cfg)
     injector = attach_injector(bus, cfg)
     trips = load_trips(vehicle)
     if trips:
@@ -380,6 +396,7 @@ async def run_live(bus: BusClient, cfg: dict[str, Any]) -> None:
         def next_sample() -> dict[str, Any]:
             sample = injector.apply(player.step())
             fusion.on_vehicle(sample, time.monotonic())
+            zoning.on_vehicle(sample, time.monotonic())
             return sample
     else:
         log.warning("no UAH-DriveSet trips found; publishing the synthetic drive (source sim)")
@@ -389,6 +406,7 @@ async def run_live(bus: BusClient, cfg: dict[str, Any]) -> None:
         def next_sample() -> dict[str, Any]:
             sample = injector.apply(vehicle_sample(time.monotonic() - started, speed))
             fusion.on_vehicle(sample, time.monotonic())
+            zoning.on_vehicle(sample, time.monotonic())
             return sample
 
     await bus.connect()

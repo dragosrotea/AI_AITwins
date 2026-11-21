@@ -67,6 +67,7 @@ core:
     max_engagements: 3             # ZO-05
     engagement_window_s: 1800      # ZO-05
     weights: {visual: 0.7, monotony: 0.3}
+    feedback_question: "How are you feeling now?"  # ZO-04 feedback ends with a question (VR-01)
   checkin:
     base_interval_min: 30          # CI-02
     short_sleep_h: 6               # CI-02
@@ -251,6 +252,7 @@ profiles:
         max_window_s: 300
       zoning:
         monotony_window_s: 60      # LEAD-T19: 60 s in the demo profile
+        weights: {visual: 1.0, monotony: 0.3}  # ZO-01: a 30 s stare alone crosses the threshold
         engagement_interval_s: 60
         engagement_window_s: 300
       checkin:
