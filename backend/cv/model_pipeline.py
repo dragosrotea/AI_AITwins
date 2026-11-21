@@ -7,7 +7,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-
 MODEL_NAMES = ("age", "emotion", "drowsiness", "distraction")
 DEFAULT_MODELS_DIR = Path(__file__).resolve().parents[2] / "models" / "trained"
 IMAGE_SIZE = 224
@@ -99,7 +98,7 @@ class FourModelPipeline:
                 if self.metadata[task]["multilabel"]:
                     scores = logits.sigmoid().tolist()
                     probabilities = {
-                        label: float(score) for label, score in zip(classes, scores)
+                        label: float(score) for label, score in zip(classes, scores, strict=False)
                     }
                     active = [
                         label
@@ -170,7 +169,6 @@ def _run_source(pipeline: FourModelPipeline, source: str | int, display: bool) -
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     break
             frame_number += 1
-            # time.sleep(2)  
     finally:
         capture.release()
         if display:

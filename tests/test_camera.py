@@ -1,7 +1,8 @@
 import unittest
+from unittest import mock
 
-from backend.cv.camera import CameraConfig, LatestFrame, CameraCapture
-from backend.cv.face_landmarks import FaceLandmarker, LandmarkResult
+from backend.cv.camera import CameraCapture, CameraConfig, LatestFrame
+from backend.cv.face_landmarks import FaceLandmarker
 from backend.cv.run import fake_sequences, state_dict
 
 
@@ -40,9 +41,19 @@ class FakePublisherTest(unittest.TestCase):
         data = state_dict(state)
 
         expected = {
-            "face_present", "eye_closed_p", "eyes_closed_ms", "perclos_60s",
-            "blink_rate_pm", "gaze_dispersion_30s", "head", "yawn_p",
-            "yawns_10m", "anger_p", "zoning_visual_p", "phone_in_hand", "fps",
+            "face_present",
+            "eye_closed_p",
+            "eyes_closed_ms",
+            "perclos_60s",
+            "blink_rate_pm",
+            "gaze_dispersion_30s",
+            "head",
+            "yawn_p",
+            "yawns_10m",
+            "anger_p",
+            "zoning_visual_p",
+            "phone_in_hand",
+            "fps",
         }
         self.assertEqual(set(data), expected)
 
@@ -56,8 +67,9 @@ class CameraCaptureTest(unittest.TestCase):
     def test_missing_opencv_error_is_actionable(self) -> None:
         capture = CameraCapture()
 
-        with self.assertRaisesRegex(RuntimeError, "Install opencv-python"):
-            capture.open()
+        with mock.patch.dict("sys.modules", {"cv2": None}):
+            with self.assertRaisesRegex(RuntimeError, "Install opencv-python"):
+                capture.open()
 
 
 if __name__ == "__main__":
