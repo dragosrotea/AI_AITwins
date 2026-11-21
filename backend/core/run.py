@@ -29,6 +29,7 @@ from pydantic import ValidationError
 from backend.bus.client import BusClient
 from backend.config import get_config
 from backend.core.alerts import Alert, AlertManager
+from backend.core.checkin import CheckinScheduler
 from backend.core.events import TEMPLATES, EventRouter
 from backend.core.fusion import RageFusion
 from backend.core.triplog import TripLog
@@ -239,7 +240,7 @@ def alert_suppressed(triplog: TripLog) -> Any:
 
 def attach_alerts(
     bus: BusClient, cfg: dict[str, Any], triplog: TripLog | None = None
-) -> AlertManager:
+) -> tuple[AlertManager, AlertWriter]:
     """Alert Manager (LEAD-T10) on the bus; core must run tick_loop() alongside."""
     manager = AlertManager(
         cfg["core"]["alerts"],
@@ -277,7 +278,42 @@ def attach_alerts(
         task.add_done_callback(running.discard)
 
     bus.subscribe(["detector.event"], on_detector_event)
-    return manager
+    return manager, writer
+
+
+def attach_checkins(
+    bus: BusClient, cfg: dict[str, Any], manager: AlertManager, writer: AlertWriter
+) -> CheckinScheduler:
+    """Check-in scheduler (LEAD-T20): starts with the pre-trip form, adapts to alerts."""
+    scheduler = CheckinScheduler(
+        cfg["core"]["checkin"], manager, writer, TEMPLATES, bus.publish_nowait
+    )
+    bus.subscribe(["control.trip"], checked("control.trip", scheduler.on_trip))
+    logged = manager.on_submit  # keep the trip log hook, then let the scheduler see the alert
+
+    def on_submit(alert: Alert) -> None:
+        if logged is not None:
+            logged(alert)
+        scheduler.on_alert(alert)
+
+    manager.on_submit = on_submit
+    follow_up = manager.on_follow_up
+
+    def on_not_ok(alert: Alert, reply: dict[str, Any] | None) -> None:
+        follow_up(alert, reply)
+        scheduler.on_not_ok(alert, reply)
+
+    manager.on_follow_up = on_not_ok
+    return scheduler
+
+
+async def checkin_loop(scheduler: CheckinScheduler, period_s: float = 1.0) -> None:
+    while True:
+        try:
+            await scheduler.tick()
+        except Exception:  # noqa: BLE001 - a scheduler bug must never stop core
+            log.exception("check-in tick failed")
+        await asyncio.sleep(period_s)
 
 
 def attach_fusion(bus: BusClient, cfg: dict[str, Any], triplog: TripLog) -> RageFusion:
@@ -312,7 +348,8 @@ async def tick_loop(manager: AlertManager, period_s: float = 0.1) -> None:
 async def run_live(bus: BusClient, cfg: dict[str, Any]) -> None:
     vehicle = cfg["core"]["vehicle"]
     triplog = attach_triplog(bus, cfg)
-    alerts = attach_alerts(bus, cfg, triplog)
+    alerts, writer = attach_alerts(bus, cfg, triplog)
+    checkins = attach_checkins(bus, cfg, alerts, writer)
     fusion = attach_fusion(bus, cfg, triplog)
     injector = attach_injector(bus, cfg)
     trips = load_trips(vehicle)
@@ -339,6 +376,7 @@ async def run_live(bus: BusClient, cfg: dict[str, Any]) -> None:
     async with asyncio.TaskGroup() as tasks:
         tasks.create_task(publish_at_rate(bus, vehicle["rate_hz"], next_sample))
         tasks.create_task(tick_loop(alerts))
+        tasks.create_task(checkin_loop(checkins))
 
 
 def main() -> None:

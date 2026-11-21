@@ -81,6 +81,7 @@ core:
     event_shorten: 0.30            # CI-04
     quiet_min: 30                  # CI-04
     quiet_lengthen: 0.20           # CI-04
+    retry_s: 30                    # LEAD-T20: a check-in held back by AL-02 tries again after this
   crash:
     spike_g: 4.0                   # CR-01
     stop_speed_kmh: 5              # CR-01
