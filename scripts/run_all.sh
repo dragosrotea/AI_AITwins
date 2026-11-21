@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start the broker and every DriveMate process (LEAD-T06). Ctrl+C stops them all.
+# Start the broker and every DriveMate process: core, cv, voice, hr, maps (LEAD-T06). Ctrl+C stops them all.
 #
 #   scripts/run_all.sh                  # live mode where it exists
 #   scripts/run_all.sh --fake           # every process on synthetic data
@@ -55,7 +55,8 @@ done
 start core  backend.core.run            --fake
 start cv    backend.cv.run              --fake
 start voice backend.voice.run           --fake
-start hr    backend.integrations.hr.run --sim
+start hr    backend.integrations.hr.run   --sim
+start maps  backend.integrations.maps.run --sim
 
 echo "[run_all] running; dashboard: cd dashboard && npm run dev; check: python scripts/smoke_test.py"
 wait
