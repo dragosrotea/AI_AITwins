@@ -70,7 +70,9 @@ async def run_fake(bus: VoiceBus) -> None:
             await asyncio.sleep(next_tick - now)
 
 
-async def run(fake: bool, latency_log: TextIO | None = None) -> None:
+async def run(
+    fake: bool, latency_log: TextIO | None = None, *, end_silence_ms: int | None = None
+) -> None:
     from backend.bus.client import BusClient
 
     bus = BusClient("voice")
@@ -80,7 +82,7 @@ async def run(fake: bool, latency_log: TextIO | None = None) -> None:
         else:
             from .live import run_live
 
-            await run_live(bus, latency_log)
+            await run_live(bus, latency_log, end_silence_ms=end_silence_ms)
     finally:
         await bus.close()
 
@@ -92,9 +94,14 @@ def main() -> None:
         "--capture-diagnostics", action="store_true", help="Print live capture timings to stderr"
     )
     parser.add_argument("--latency-log", type=Path, help="Append live timing samples as JSONL")
+    parser.add_argument(
+        "--end-silence-ms", type=int, help="Override live reply endpoint wait (default: 800 ms)"
+    )
     args = parser.parse_args()
     if args.fake and args.latency_log is not None:
         parser.error("--latency-log requires live mode")
+    if args.end_silence_ms is not None and (args.fake or args.end_silence_ms <= 0):
+        parser.error("--end-silence-ms requires live mode and a positive duration")
     if args.capture_diagnostics:
         logging.basicConfig(format="%(message)s")
         logging.getLogger("backend.voice.capture").setLevel(logging.INFO)
@@ -103,7 +110,7 @@ def main() -> None:
         with (
             args.latency_log.open("a", encoding="utf-8") if args.latency_log else nullcontext()
         ) as latency_log:
-            asyncio.run(run(args.fake, latency_log))
+            asyncio.run(run(args.fake, latency_log, end_silence_ms=args.end_silence_ms))
     except KeyboardInterrupt:
         pass
 

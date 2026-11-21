@@ -52,6 +52,30 @@ async def test_silence_retains_no_audio(monkeypatch, caplog):
     assert "first_ms=none last_ms=none positive_frames=0" in caplog.text
 
 
+@pytest.mark.parametrize(("wait", "expected_frames"), [(0.8, 41), (0.45, 29)])
+async def test_endpoint_wait_uses_last_speech_timestamp_and_keeps_brief_pause(
+    monkeypatch, wait, expected_frames
+):
+    # The second speech section starts after a brief gap and resets the timer.
+    speech_indices = {1, 2, 3, 12, 13, 14}
+    frames = [
+        AudioFrame(i, pack("<h", 1500 if i in speech_indices else 0) * FRAME_SAMPLES, i * 0.03)
+        for i in range(1, 44)
+    ]
+    mic = Mock()
+    mic.read_since.return_value = frames
+    vad = Mock()
+    vad.is_speech.side_effect = lambda pcm, _rate: pcm[:2] != b"\x00\x00"
+    monkeypatch.setattr(live, "Vad", lambda _mode: vad)
+    monkeypatch.setattr(live, "perf_counter", lambda: 2.0)
+
+    pcm, speech_end = await live.capture_reply(mic, 0, 1.5, started_at=0, end_silence_s=wait)
+
+    assert speech_end == pytest.approx(0.42)
+    assert vad.is_speech.call_count == expected_frames
+    assert pcm == b"".join(frame.pcm for frame in frames[:19])
+
+
 @pytest.mark.parametrize(
     ("transcript", "expected", "after_noise"),
     [

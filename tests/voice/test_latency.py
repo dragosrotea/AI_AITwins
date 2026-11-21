@@ -32,9 +32,10 @@ async def test_timing_starts_at_last_speech_frame(monkeypatch, path, provider_fa
         now = 11.8  # Device cleanup returns after the chime's last sample.
         return PlaybackTiming(10.72, 11.6)
 
-    async def capture(_mic, _cursor, deadline, *, started_at, alert_id):
+    async def capture(_mic, _cursor, deadline, *, started_at, alert_id, end_silence_s):
         nonlocal now
         assert alert_id == "private-id"
+        assert end_silence_s == 0.8
         assert started_at == 11.6
         assert deadline == pytest.approx(19.6)
         now = 12.86  # 810 ms after the last detected speech frame.
@@ -77,6 +78,7 @@ async def test_timing_starts_at_last_speech_frame(monkeypatch, path, provider_fa
     assert sample.playback_start_ms == pytest.approx(720)
     assert sample.listening_ms == pytest.approx(1260)
     assert sample.whisper_ms == 150
+    assert sample.speech_to_capture_end_ms == pytest.approx(810)
     assert sample.classification_ms == pytest.approx(120)
     assert sample.speech_to_intent_ms == pytest.approx(1080)
     for private in ("private", "raw audio", alert.text):

@@ -21,6 +21,7 @@ class LatencySample:
     whisper_ms: float | None = None
     classification_ms: float | None = None
     speech_to_intent_ms: float | None = None
+    speech_to_capture_end_ms: float | None = None
 
     def write(self, stream: TextIO) -> None:
         stream.write(json.dumps(asdict(self), allow_nan=False) + "\n")
@@ -63,13 +64,21 @@ def report(samples: list[LatencySample]) -> str:
             [sample.playback_start_ms for sample in successful if sample.playback_source == source],
         )
     add("Listening window", [sample.listening_ms for sample in successful])
+    add("End of speech to capture end", [sample.speech_to_capture_end_ms for sample in successful])
     add("Whisper", [sample.whisper_ms for sample in successful])
     add("Intent classification", [sample.classification_ms for sample in successful])
     add("End of speech to intent (overall)", [sample.speech_to_intent_ms for sample in successful])
     for path in ("keyword", "llm"):
+        cohort = [sample for sample in successful if sample.path == path]
+        add(
+            f"End of speech to capture end ({path})",
+            [sample.speech_to_capture_end_ms for sample in cohort],
+        )
+        add(f"Whisper ({path})", [sample.whisper_ms for sample in cohort])
+        add(f"Intent classification ({path})", [sample.classification_ms for sample in cohort])
         add(
             f"End of speech to intent ({path})",
-            [sample.speech_to_intent_ms for sample in successful if sample.path == path],
+            [sample.speech_to_intent_ms for sample in cohort],
         )
     return "\n".join(lines)
 
