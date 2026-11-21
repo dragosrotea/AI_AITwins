@@ -214,13 +214,6 @@ export function PreTripForm() {
               </select>
             </label>
             <label>
-              Language
-              <select value={pretrip.lang} onChange={(event) => update('lang', event.currentTarget.value as Pretrip['lang'])}>
-                <option value="en">English</option>
-                <option value="ro">Romanian</option>
-              </select>
-            </label>
-            <label>
               Resting heart rate (BPM)
               <input type="number" min="1" step="1" required value={pretrip.resting_hr} onChange={(event) => update('resting_hr', Number(event.currentTarget.value))} />
             </label>

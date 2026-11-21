@@ -22,6 +22,7 @@ import math
 import random
 import time
 import uuid
+from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
@@ -36,6 +37,8 @@ from backend.core.triplog import TripLog
 from backend.core.vehicle import Injector, Player, load_trips
 from backend.core.wording import AlertWriter
 from backend.core.zoning import ZoningFusion
+from backend.llm import summarize_trip
+from backend.llm.summary import render_summary, trip_stats
 from backend.schemas import validate
 
 log = logging.getLogger("core")
@@ -171,11 +174,17 @@ def checked(topic: str, handler: Any) -> Any:
 
     def on_message(envelope: dict[str, Any]) -> None:
         try:
-            validate(topic, envelope["data"])
+            data = envelope["data"]
+            if topic == "control.trip" and isinstance(data, dict):
+                pretrip = data.get("pretrip")
+                if isinstance(pretrip, dict) and pretrip.get("lang", "en") in ("en", "ro"):
+                    # Keep legacy compatibility local to Core; the published contract keeps lang.
+                    data = {**data, "pretrip": {**pretrip, "lang": "en"}}
+            validate(topic, data)
         except (ValidationError, KeyError) as error:
             log.warning("ignored bad %s: %s", topic, error)
             return
-        handler(envelope["data"])
+        handler(data)
 
     return on_message
 
@@ -211,7 +220,41 @@ def log_hook(name: str) -> Any:
 def attach_triplog(bus: BusClient, cfg: dict[str, Any]) -> TripLog:
     """Trip log (LEAD-T12): every configured topic, as it went over the bus (AL-04)."""
     triplog = TripLog(cfg["core"]["triplog"])
-    bus.subscribe(triplog.topics, triplog.write)
+    active = False
+    summaries: set[asyncio.Task[None]] = set()
+
+    async def summarize(path: Path) -> None:
+        try:
+            records = await asyncio.to_thread(triplog.read_completed, path)
+        except (OSError, ValueError):
+            log.exception("could not read completed trip log: %s", path)
+            records = []
+        stats = trip_stats(records)
+        text = await summarize_trip(records) or render_summary(stats)
+        payload = {"text": text, "stats": stats}
+        if "trip.summary" in triplog.topics:
+            try:
+                await asyncio.to_thread(triplog.append_summary, path, payload)
+            except OSError:
+                log.exception("could not append summary to completed trip log: %s", path)
+        bus.publish_nowait("trip.summary", payload)
+        log.info("Trip summary: %s", text)
+
+    def on_record(envelope: dict[str, Any]) -> None:
+        nonlocal active
+        triplog.write(envelope)
+        if envelope.get("topic") != "control.trip":
+            return
+        action = envelope.get("data", {}).get("action")
+        if action == "start":
+            active = True
+        elif action == "stop" and active and triplog.path is not None:
+            active = False
+            task = asyncio.create_task(summarize(triplog.path))
+            summaries.add(task)
+            task.add_done_callback(summaries.discard)
+
+    bus.subscribe([topic for topic in triplog.topics if topic != "trip.summary"], on_record)
     return triplog
 
 
@@ -308,13 +351,6 @@ def attach_alerts(
     manager.on_emergency = on_emergency
     bus.subscribe(["voice.status"], checked("voice.status", manager.on_voice_status))
     bus.subscribe(["voice.reply"], checked("voice.reply", manager.on_voice_reply))
-
-    def on_trip(data: dict[str, Any]) -> None:
-        if data["action"] == "start" and data.get("pretrip"):
-            manager.lang = data["pretrip"]["lang"]
-            log.info("driver language: %s", manager.lang)
-
-    bus.subscribe(["control.trip"], checked("control.trip", on_trip))
 
     writer = AlertWriter(cfg["core"]["alerts"]["llm_timeout_s"], TEMPLATES)
     router = EventRouter(manager, cfg["core"]["routing"], writer, cfg["core"]["zoning"])

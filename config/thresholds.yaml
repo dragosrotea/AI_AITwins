@@ -32,7 +32,7 @@ core:
     voice_gap_s: 0.5               # pause before the next voice.say: voice drops non-T3 while busy
     alarm_audio_key: alarm         # VR-05: assets/audio/alarm.wav, played by voice instead of speech
     alarm_rounds: 5                # VR-05: alarm rounds after a T3 miss, until the driver answers
-    default_lang: en               # until control.trip sets the driver's language
+    default_lang: en               # English-only runtime
     cooldown_s:                    # LEAD-T14: per type, from one accepted alert to the next
       distraction: 60
       phone: 60
