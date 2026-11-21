@@ -475,3 +475,58 @@ def test_demo_profile_shortens_the_limits() -> None:
     assert demo["noncritical_min_interval_s"] < RATE_CFG["noncritical_min_interval_s"]
     assert demo["t1_min_interval_s"] < RATE_CFG["t1_min_interval_s"]
     assert all(demo["cooldown_s"][k] <= v for k, v in RATE_CFG["cooldown_s"].items())
+
+
+# LEAD-T23: hold T1 prompts while the road load is HIGH (AL-03, MAP-03)
+
+
+def road(rig: Rig, load: str) -> None:
+    rig.am.on_road({"load": load})
+
+
+def test_queued_trivia_plays_only_after_the_busy_stretch(rig: Rig) -> None:
+    """MAP-03 acceptance: a queued trivia question plays only after the roundabout."""
+    first = submit(rig, "distraction", "T2")
+    trivia = submit(rig, "zoning_out", "T1")  # waits behind the T2
+    road(rig, "HIGH")
+    assert rig.statuses(trivia)[-1] == "held"  # visible as held on the dashboard (ZO-06)
+    rig.reply(first, "OK")
+    rig.advance(GAP)
+    assert rig.am.active is None  # nothing else may play: the trivia is held
+    road(rig, "LOW")
+    assert rig.am.active is trivia and rig.statuses(trivia)[-2:] == ["queued", "speaking"]
+
+
+def test_new_t1_arrives_held_and_t2_t3_are_never_held(rig: Rig) -> None:
+    road(rig, "HIGH")
+    checkin = submit(rig, "checkin_due", "T1")
+    assert rig.statuses(checkin) == ["held"] and rig.am.active is None
+    warning = submit(rig, "phone", "T2")
+    assert rig.am.active is warning  # T2 is spoken at once
+    rig.reply(warning, "OK")
+    rig.advance(GAP)
+    micro = submit(rig, "microsleep", "T3")
+    assert rig.am.active is micro
+    assert rig.statuses(checkin) == ["held"]  # still waiting
+
+
+def test_a_playing_t1_finishes_when_the_load_rises(rig: Rig) -> None:
+    checkin = submit(rig, "checkin_due", "T1")
+    road(rig, "HIGH")
+    assert rig.am.active is checkin
+    rig.reply(checkin, "OK")
+    assert rig.statuses(checkin)[-1] == "closed"
+
+
+def test_medium_load_does_not_hold(rig: Rig) -> None:
+    road(rig, "MEDIUM")
+    checkin = submit(rig, "checkin_due", "T1")
+    assert rig.am.active is checkin
+
+
+def test_repeated_road_messages_change_nothing(rig: Rig) -> None:
+    road(rig, "HIGH")
+    trivia = submit(rig, "zoning_out", "T1")
+    for _ in range(5):
+        road(rig, "HIGH")  # context.road comes at 1 Hz
+    assert rig.statuses(trivia) == ["held"]

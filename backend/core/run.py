@@ -356,6 +356,7 @@ def attach_alerts(
     manager.on_alarm = on_alarm
     manager.on_emergency = on_emergency
     manager.countdowns = {"crash_candidate": cfg["core"]["crash"]["countdown_s"]}  # CR-02
+    bus.subscribe(["context.road"], checked("context.road", manager.on_road))  # AL-03
     bus.subscribe(["voice.status"], checked("voice.status", manager.on_voice_status))
     bus.subscribe(["voice.reply"], checked("voice.reply", manager.on_voice_reply))
 

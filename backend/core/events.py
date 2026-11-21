@@ -124,8 +124,10 @@ class EventRouter:
     def on_road(self, data: dict[str, Any]) -> None:
         self.road_blocked = road_blocked(data)
         if self.road_blocked:
+            # No new trivia starts (ZO-06), and one being written is dropped. A trivia already
+            # queued is held by the Alert Manager and plays after the busy stretch (MAP-03,
+            # AL-03, LEAD-T23), so it is no longer cancelled here.
             self._engagement_epoch += 1
-            self.manager.cancel_queued(["zoning_out"])
 
     def _can_engage(self) -> bool:
         return (

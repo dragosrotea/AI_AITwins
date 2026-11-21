@@ -28,6 +28,10 @@ short text, the next escalates T1 -> T2 -> T3; a miss at T3 after its repeats ca
 (and on_emergency after a crash) and starts a continuous alarm (VR-05): voice plays
 alarm_audio_key and listens, again and again, until any reply or alarm_rounds rounds.
 
+Busy roads (LEAD-T23, AL-03): while context.road says HIGH load, T1 alerts wait as "held"
+(queued T1s are re-published as held, new ones arrive held) and play once the load drops. T2
+and T3 are never held, and a T1 already playing finishes.
+
 Countdown alerts (LEAD-T22, CR-02: types in `countdowns`, e.g. crash_candidate: 20 s): the
 countdown starts when the alert is first spoken. A miss sounds the alarm again instead of
 repeating or escalating; OK (or any non-HELP answer) closes it; HELP or the end of the countdown
@@ -138,6 +142,7 @@ class AlertManager:
         self.active: Alert | None = None
         self._seq = itertools.count()
         self.countdowns: dict[str, float] = {}  # type -> seconds (CR-02), set by core
+        self.road_high = False  # AL-03: hold T1 prompts while the road load is HIGH
         self._resume: Callable[[], None] | None = None  # next voice.say, after voice_gap_s
         self._resume_at = 0.0
 
@@ -185,7 +190,7 @@ class AlertManager:
         elif tier == "T3" and self.active is None:
             self._resume = None  # no gap for T3
             self._start_next()
-        elif self.active is None and self._resume is None:
+        elif self.active is None and self._resume is None and not self._held(alert):
             self._start_next()
         return alert
 
@@ -220,6 +225,18 @@ class AlertManager:
         log.info("suppress %s %s: %s", tier, type, reason)
         if self.on_suppress is not None:
             self.on_suppress(type, tier, reason)
+
+    def on_road(self, data: dict[str, Any]) -> None:
+        """context.road (AL-03): hold queued T1 prompts at HIGH load, release them after."""
+        high = data["load"] == "HIGH"
+        if high == self.road_high:
+            return
+        self.road_high = high
+        for alert in [a for a in self.queue if a.tier == "T1"]:
+            self._set_status(alert, "held" if high else "queued")
+        log.info("road load %s: T1 prompts %s", data["load"], "held" if high else "released")
+        if not high and self.active is None and self._resume is None:
+            self._start_next()
 
     # Input: voice
 
@@ -283,16 +300,21 @@ class AlertManager:
         return self.queue + ([self.active] if self.active else [])
 
     def _enqueue(self, alert: Alert) -> None:
-        alert.status = "queued"
+        alert.status = "held" if self._held(alert) else "queued"
         self.queue.append(alert)
         self.queue.sort(key=lambda a: (-TIER_RANK[a.tier], a.seq))
         self._publish_state(alert)
 
+    def _held(self, alert: Alert) -> bool:
+        return self.road_high and alert.tier == "T1"
+
     def _start_next(self) -> None:
-        if not self.queue:
+        ready = [a for a in self.queue if not self._held(a)]  # the queue is sorted by tier
+        if not ready:
             self.publish("control.music", {"duck": False, "level": 1.0})
             return
-        self._speak(self.queue.pop(0), first=True)
+        self.queue.remove(ready[0])
+        self._speak(ready[0], first=True)
 
     def _later(self, action: Callable[[], None]) -> None:
         self._resume = action
