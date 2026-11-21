@@ -69,6 +69,17 @@ held-out closed-eye precision, recall, model size, and CPU inference latency.
 It refuses to claim metrics when MRL data is missing or the split lacks both
 eye classes.
 
+Reproduce the eye model's held-out precision, recall, F1, and CPU latency table
+without retraining:
+
+```bash
+python3 -m training.evaluate
+```
+
+The evaluator uses the same deterministic subject split and the configured
+closed-eye threshold. It reports eye-state metrics only; yawn and expression
+metrics are added when those later models are trained.
+
 ## Training the four-model pipeline
 
 The current local folders are `age_detection`, `emotion_detection`, and `dmd`.

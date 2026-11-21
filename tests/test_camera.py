@@ -1,4 +1,5 @@
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 from backend.cv.camera import CameraCapture, CameraConfig, LatestFrame
@@ -24,6 +25,7 @@ class CameraConfigTest(unittest.TestCase):
 
         self.assertEqual(config.index, 0)
         self.assertEqual((config.capture_width, config.capture_height), (1280, 720))
+        self.assertEqual(config.capture_fourcc, "MJPG")
         self.assertEqual((config.process_width, config.process_height), (640, 360))
 
 
@@ -64,6 +66,35 @@ class FakePublisherTest(unittest.TestCase):
 
 
 class CameraCaptureTest(unittest.TestCase):
+    def test_requests_configured_capture_format_before_dimensions(self) -> None:
+        calls: list[tuple[int, float]] = []
+
+        class Capture:
+            def set(self, property_id: int, value: float) -> bool:
+                calls.append((property_id, value))
+                return True
+
+            def isOpened(self) -> bool:
+                return True
+
+            def release(self) -> None:
+                pass
+
+        cv2 = SimpleNamespace(
+            VideoCapture=lambda _index: Capture(),
+            VideoWriter_fourcc=lambda *chars: ord(chars[0]),
+            CAP_PROP_FOURCC=1,
+            CAP_PROP_FRAME_WIDTH=2,
+            CAP_PROP_FRAME_HEIGHT=3,
+        )
+        capture = CameraCapture()
+
+        with mock.patch.dict("sys.modules", {"cv2": cv2}):
+            capture.open()
+
+        self.assertEqual(calls, [(1, float(ord("M"))), (2, 1280.0), (3, 720.0)])
+        capture.stop()
+
     def test_missing_opencv_error_is_actionable(self) -> None:
         capture = CameraCapture()
 

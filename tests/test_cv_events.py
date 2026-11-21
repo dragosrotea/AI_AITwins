@@ -4,7 +4,7 @@ from copy import deepcopy
 
 import pytest
 
-from backend.cv.run import run_fake
+from backend.cv.run import _next_deadline, run_fake
 from backend.cv.settings import load_cv_settings
 from backend.cv.visual_events import DriverStateMetrics, VisualEventDetector
 from backend.schemas import validate
@@ -122,6 +122,23 @@ def test_eye_metrics_track_closure_and_wait_for_perclos_window(settings: dict) -
     assert held_closed["perclos_60s"] == pytest.approx(1.0)
 
 
+def test_gaze_dispersion_and_blink_rate_use_configured_rolling_windows(settings: dict) -> None:
+    settings["gaze_window_s"] = 2.0
+    settings["blink_window_s"] = 3.0
+    metrics = DriverStateMetrics(settings)
+    state = _state()
+
+    first = metrics.update(state, now=0.0, gaze=(0.0, 0.0), blink=True)
+    second = metrics.update(state, now=1.0, gaze=(1.0, 0.0), blink=True)
+    third = metrics.update(state, now=4.0, gaze=(1.0, 0.0))
+
+    assert first["blink_rate_pm"] == 20.0
+    assert second["blink_rate_pm"] == 40.0
+    assert second["gaze_dispersion_30s"] == pytest.approx(22.5)
+    assert third["blink_rate_pm"] == 20.0
+    assert third["gaze_dispersion_30s"] == 0.0
+
+
 def test_fake_live_loop_publishes_visual_detector_events(monkeypatch) -> None:
     messages = []
     signal_handlers = []
@@ -162,3 +179,8 @@ def test_fake_live_loop_publishes_visual_detector_events(monkeypatch) -> None:
     assert len(events) == 1
     assert events[0]["type"] == "distraction"
     assert validate("detector.event", events[0])
+
+
+def test_publish_deadline_keeps_phase_and_skips_missed_ticks() -> None:
+    assert _next_deadline(0.1, 0.133, 0.1) == pytest.approx(0.2)
+    assert _next_deadline(0.2, 0.36, 0.1) == pytest.approx(0.4)

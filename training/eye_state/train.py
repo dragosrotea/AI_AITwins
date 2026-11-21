@@ -227,11 +227,13 @@ def train(args: argparse.Namespace) -> None:
         predictions.append(int(float(probabilities[1]) >= threshold))
 
     precision, recall = _metrics(labels, predictions)
+    f1 = 2.0 * precision * recall / (precision + recall) if precision + recall else 0.0
     inference_ms = inference_seconds * 1000 / len(validation_samples)
     model_size_bytes = args.output.stat().st_size
     print(f"held-out subjects: {len(validation_subjects)}")
     print(f"closed-eye precision: {precision:.4f}")
     print(f"closed-eye recall: {recall:.4f}")
+    print(f"closed-eye F1: {f1:.4f}")
     print(f"ONNX inference: {inference_ms:.3f} ms/eye")
     print(f"model size: {model_size_bytes} bytes ({args.output})")
     max_model_size = integer_setting(settings, "eye_state", "max_model_size_bytes", minimum=1)
