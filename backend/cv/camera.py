@@ -21,6 +21,15 @@ class CameraConfig:
     process_width: int = 640
     process_height: int = 360
 
+    def __post_init__(self) -> None:
+        if self.index < 0:
+            raise ValueError("Camera index must be non-negative")
+        if (
+            min(self.capture_width, self.capture_height, self.process_width, self.process_height)
+            <= 0
+        ):
+            raise ValueError("Camera capture and processing dimensions must be positive")
+
 
 class LatestFrame:
     """A thread-safe latest-frame buffer with the newest processed frame only."""
@@ -74,7 +83,9 @@ class CameraCapture:
         if self._capture is None:
             self.open()
         self._stop.clear()
-        self._thread = threading.Thread(target=self._capture_loop, name="drivemate-camera", daemon=True)
+        self._thread = threading.Thread(
+            target=self._capture_loop, name="drivemate-camera", daemon=True
+        )
         self._thread.start()
 
     def stop(self) -> None:
@@ -95,6 +106,7 @@ class CameraCapture:
         while not self._stop.is_set():
             ok, frame = capture.read()
             if not ok:
+                time.sleep(0.01)
                 continue
             processed = cv2.resize(
                 frame,
@@ -109,11 +121,15 @@ class CameraCapture:
 
 def list_cameras(max_index: int = 10) -> list[int]:
     """Return webcam indices that OpenCV can open on this machine."""
+    if max_index < 0:
+        raise ValueError("max_index must be non-negative")
     cv2 = CameraCapture()._load_cv2()
     available: list[int] = []
     for index in range(max_index):
         capture = cv2.VideoCapture(index)
-        if capture.isOpened():
-            available.append(index)
-        capture.release()
+        try:
+            if capture.isOpened():
+                available.append(index)
+        finally:
+            capture.release()
     return available
