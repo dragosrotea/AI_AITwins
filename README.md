@@ -23,3 +23,16 @@ Run the CV unit tests:
 ```bash
 python3 -m unittest discover -s tests -v
 ```
+
+## DriveMate dashboard
+
+Driver-safety copilot dashboard and integrations for the CodeLap 2026 hackathon.
+
+```sh
+cd dashboard
+npm install
+npm run dev
+```
+
+The dashboard connects to the broker at `ws://localhost:8765/bus` by default. Set
+`VITE_BUS_URL` in `dashboard/.env.local` to use a different broker URL.
