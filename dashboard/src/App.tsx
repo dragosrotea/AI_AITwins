@@ -7,6 +7,7 @@ import ReplayControls from './ReplayControls'
 import { AccelerationChart, CabinChart, DebugCorner, DriverCameraPanel } from './TelemetryPanels'
 import EventTimeline from './EventTimeline'
 import { DriverStatusPanel, PreTripForm } from './DriverPanels'
+import { CrashSafetyNotice } from './CrashStatus'
 import { AttentionPanel, CheckinSchedulePanel, HeartRatePanel, RoadContextPanel } from './IntegrationPanels'
 
 type RoutePath = '/driver' | '/copilot' | '/debug'
@@ -65,6 +66,7 @@ function CopilotLayout() {
           <h2 id="copilot-page-title">Co-pilot</h2>
         </div>
       </div>
+      <CrashSafetyNotice />
       <div className="copilot-panels">
         <DriverCameraPanel />
         <AccelerationChart />

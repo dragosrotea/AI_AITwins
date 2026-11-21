@@ -222,6 +222,7 @@ voice:
   cabin_shout_s: 1.0  # Set to 0.5 for the demo.
 
 ui:
+  crash_countdown_s: 20            # CR-02; keep aligned with core.crash.countdown_s
   accel_window_s: 60               # DB-02
   harsh_marker_g: 0.4              # DB-02
   form_lock_speed_kmh: 5           # CI-06, NF-07

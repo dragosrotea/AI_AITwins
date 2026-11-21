@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { bus } from './bus'
+import { CrashSafetyNotice } from './CrashStatus'
 import type { AlertState, CheckinSchedule, Pretrip, TopicEnvelope, VoiceStatus } from './types'
 
 function useBusUpdates() {
@@ -94,6 +95,7 @@ export function DriverStatusPanel() {
           )}
         </div>
         <p className="driver-status-message" aria-live="polite">{spokenText}</p>
+        <CrashSafetyNotice compact />
         <div className="driver-next-checkin">
           <span>NEXT CHECK-IN</span>
           <strong>
@@ -122,7 +124,7 @@ export function PreTripForm() {
   const [pretrip, setPretrip] = useState<Pretrip>(INITIAL_PRETRIP)
   const [tripActive, setTripActive] = useState(false)
   const [speed, setSpeed] = useState(() => latest('vehicle.motion')?.data.speed_kmh ?? 0)
-  const [message, setMessage] = useState('')
+  const [message, setMessage] = useState<{ text: string; kind: 'success' | 'error' } | null>(null)
   const isMoving = speed > 5
 
   useEffect(() => {
@@ -151,21 +153,21 @@ export function PreTripForm() {
     event.preventDefault()
     if (isMoving) return
     if (!bus.publish('control.trip', { action: 'start', pretrip })) {
-      setMessage('Broker is offline. Trip start was not sent.')
+      setMessage({ text: 'Could not send trip start. Check the broker connection and try again.', kind: 'error' })
       return
     }
     setTripActive(true)
-    setMessage(`Trip started. Departure time recorded at ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`)
+    setMessage({ text: 'Trip start sent to broker.', kind: 'success' })
   }
 
   function stopTrip() {
     if (isMoving) return
     if (!bus.publish('control.trip', { action: 'stop' })) {
-      setMessage('Broker is offline. Trip stop was not sent.')
+      setMessage({ text: 'Could not send trip stop. Check the broker connection and try again.', kind: 'error' })
       return
     }
     setTripActive(false)
-    setMessage('Trip stopped.')
+    setMessage({ text: 'Trip stop sent to broker.', kind: 'success' })
   }
 
   return (
@@ -185,7 +187,12 @@ export function PreTripForm() {
           <button type="button" className="pretrip-stop" onClick={stopTrip} disabled={isMoving}>Stop trip</button>
         </div>
       ) : (
-        <form className="pretrip-form" onSubmit={startTrip}>
+        <form
+          className="pretrip-form"
+          onSubmit={startTrip}
+          onInvalidCapture={() => setMessage({ text: 'Complete the required fields and check the emergency contact format (+country code).', kind: 'error' })}
+          onChange={() => setMessage(null)}
+        >
           <fieldset disabled={isMoving}>
             <label>
               Planned drive (minutes)
@@ -239,7 +246,7 @@ export function PreTripForm() {
           </div>
         </form>
       )}
-      {message && <p className="pretrip-message" role="status">{message}</p>}
+      {message && <p className={`pretrip-message pretrip-message--${message.kind}`} role={message.kind === 'error' ? 'alert' : 'status'}>{message.text}</p>}
     </section>
   )
 }
