@@ -47,16 +47,20 @@ codes below were then checked against the data.
 Axes, worked out from the data (the README does not say):
 - **Z (col 7) = longitudinal, positive = speeding up, negative = braking.** Braking events
   (type 1) peak at negative Z; acceleration events (type 3) at positive Z. Z also follows the
-  change in GPS speed, with the GPS about 3 s behind (median correlation +0.39 over 40 trips,
-  positive on every trip).
-- **Y (col 6) = lateral.** Turning events (type 2) show large |Y| and almost no Z, and Y follows
-  speed × course change (+0.62 on the D1 normal motorway trip). Sign convention not confirmed yet.
+  change in GPS speed on every trip (positive correlation on all 40).
+- **GPS lag: about 0.75 s.** Over the 25 braking peaks below −0.3 g, the biggest GPS speed drop
+  comes a median 0.75 s after the accelerometer peak (middle half 0 to 1.6 s; the GPS is only
+  1 Hz). An earlier smoothed cross-correlation suggested 3 s, but that put the speed drop
+  *before* the braking, so it was wrong. `core.vehicle.gps_lag_s` uses 0.75.
+- **Y (col 6) = lateral, positive when turning right.** Turning events (type 2) show large |Y|
+  and almost no Z, and Y follows speed × rate of course change (course in degrees clockwise, so
+  positive = right turn; correlation +0.62 on the D1 normal motorway trip).
 - **X (col 5) = vertical** (road bumps); small, not used.
 
 So `vehicle.motion` maps to: `accel_long_g` = col 7, `accel_lat_g` = col 6,
 `accel_mag_g` = √(long² + lat²).
 
-**`RAW_GPS.txt`: speed and position, 1 Hz** (median step 1.000 s). Interpolate to 10 Hz.
+**`RAW_GPS.txt`: speed and position, 1 Hz** (median step 1.000 s). Shift by the ~0.75 s lag, then interpolate to 10 Hz.
 
 | Col | Meaning | Unit |
 | --- | --- | --- |
