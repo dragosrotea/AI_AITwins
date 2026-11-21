@@ -144,6 +144,10 @@ cv:
     weights_brow: 0.35
     weights_mouth: 0.45
     weights_nose: 0.2
+  anger_model:
+    model_path: models/trained/emotion.pt
+    rate_hz: 5
+    smoothing_alpha: 0.2
   zoning:
     window_s: 60
     gaze_dispersion_deg: 2.0
