@@ -119,7 +119,7 @@ cv:
     max_model_size_bytes: 5000000
     max_inference_ms_per_eye: 3.0
   preview:
-    rate_hz: 5
+    rate_hz: 15
     width: 320
     jpeg_quality: 80
     draw_landmarks: false

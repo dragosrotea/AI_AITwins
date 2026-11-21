@@ -44,6 +44,14 @@ class DriverStateMetrics:
         )
         self._yawn_hold_s = float_setting(settings, "yawn_fallback", "hold_s")
         self._yawn_cooldown_s = float_setting(settings, "yawn_fallback", "cooldown_s")
+        self._yawn_model_threshold = float_setting(
+            settings, "activity_models", "drowsiness_threshold"
+        )
+        self._yawn_model_weight = float_setting(
+            settings, "activity_models", "yawn_blend_weight"
+        )
+        if not 0.0 <= self._yawn_model_weight <= 1.0:
+            raise ValueError("CV activity yawn blend weight must be between 0 and 1")
         self._anger_rate_hz = float_setting(settings, "anger_fallback", "rate_hz")
         self._anger_alpha = float_setting(settings, "anger_fallback", "smoothing_alpha")
         self._anger_weights = {
@@ -120,6 +128,8 @@ class DriverStateMetrics:
         head_pose: tuple[float, float] | None = None,
         mouth_aspect: float | None = None,
         blendshapes: Mapping[str, float] | None = None,
+        yawn_model_p: float | None = None,
+        model_blink: bool = False,
     ) -> dict[str, Any]:
         if not math.isfinite(now):
             raise ValueError("Driver state timestamp must be finite")
@@ -128,6 +138,10 @@ class DriverStateMetrics:
         eye_closed_p = float(state["eye_closed_p"])
         if not math.isfinite(eye_closed_p) or not 0.0 <= eye_closed_p <= 1.0:
             raise ValueError("eye_closed_p must be finite and between 0 and 1")
+        if yawn_model_p is not None and (
+            not math.isfinite(yawn_model_p) or not 0.0 <= yawn_model_p <= 1.0
+        ):
+            raise ValueError("yawn_model_p must be finite and between 0 and 1")
         closed = face_present and eye_closed_p >= self._closed_probability_threshold
 
         if (
@@ -176,7 +190,7 @@ class DriverStateMetrics:
             sample for sample in self._gaze_samples if sample[0] >= gaze_cutoff
         )
 
-        if blink and face_present:
+        if (blink or model_blink) and face_present:
             self._blink_times.append(now)
         blink_cutoff = now - self._blink_window_s
         while self._blink_times and self._blink_times[0] < blink_cutoff:
@@ -198,8 +212,8 @@ class DriverStateMetrics:
             self._yawn_score = 0.0
         elif now - self._last_yawn_sample >= 1.0 / self._yawn_rate_hz:
             self._last_yawn_sample = now
-            self._yawn_score = 0.0
-            yawn_active = False
+            blendshape_yawn_score = 0.0
+            blendshape_yawn_active = False
             if mouth_aspect is not None and blendshapes is not None:
                 jaw_open = self._blendshape(blendshapes, "jawOpen")
                 mouth_stretch = (
@@ -207,12 +221,28 @@ class DriverStateMetrics:
                     + self._blendshape(blendshapes, "mouthStretchRight")
                 ) / 2.0
                 mouth_funnel = self._blendshape(blendshapes, "mouthFunnel")
-                self._yawn_score = 0.65 * jaw_open + 0.2 * mouth_stretch + 0.15 * mouth_funnel
-                yawn_active = (
-                    self._yawn_score >= self._yawn_score_threshold
+                blendshape_yawn_score = (
+                    0.65 * jaw_open + 0.2 * mouth_stretch + 0.15 * mouth_funnel
+                )
+                blendshape_yawn_active = (
+                    blendshape_yawn_score >= self._yawn_score_threshold
                     and mouth_aspect >= self._yawn_mouth_aspect_threshold
                 )
-            if yawn_active:
+            model_yawn_score = (
+                min(1.0, max(0.0, yawn_model_p)) if yawn_model_p is not None else None
+            )
+            if model_yawn_score is None:
+                self._yawn_score = blendshape_yawn_score
+            else:
+                self._yawn_score = (
+                    (1.0 - self._yawn_model_weight) * blendshape_yawn_score
+                    + self._yawn_model_weight * model_yawn_score
+                )
+            model_yawn_active = (
+                model_yawn_score is not None
+                and model_yawn_score >= self._yawn_model_threshold
+            )
+            if blendshape_yawn_active or model_yawn_active:
                 if self._yawn_since is None:
                     self._yawn_since = now
                 if now - self._yawn_since >= self._yawn_hold_s and not self._yawn_emitted:
@@ -441,6 +471,7 @@ class VisualEventDetector:
                 "yaw": yaw,
                 "pitch": pitch,
                 "model_p": distraction_model_p,
+                "action_probabilities": state.get("distraction_action_probabilities", {}),
                 "held_s": elapsed.get("distraction", 0.0),
             },
             "microsleep": {"eyes_closed_ms": eyes_closed_ms},
@@ -448,6 +479,7 @@ class VisualEventDetector:
                 "perclos_60s": perclos,
                 "yawns_10m": yawns,
                 "model_p": drowsiness_model_p,
+                "class_probabilities": state.get("drowsiness_class_probabilities", {}),
             },
             "no_face": {"face_absent_s": elapsed.get("no_face", 0.0)},
             "phone": {"phone_p": phone_model_p, "held_s": elapsed.get("phone", 0.0)},
