@@ -14,6 +14,7 @@ from backend.bus.client import BusClient
 from backend.schemas import AudioFeatures
 
 from .devices import FRAME_MS, SAMPLE_RATE, AudioSettings, Microphone
+from .profanity import CabinProfanity
 
 PERIOD_S = 0.2
 FRAME_S = FRAME_MS / 1000
@@ -25,9 +26,12 @@ def dbfs(power: float) -> float:
 
 
 class CabinMonitor:
-    def __init__(self, mic: Microphone, settings: AudioSettings) -> None:
+    def __init__(
+        self, mic: Microphone, settings: AudioSettings, profanity: CabinProfanity | None = None
+    ) -> None:
         self._mic = mic
         self._settings = settings
+        self._profanity = profanity
         self._cursor = mic.cursor()
         self._vad = Vad(2)
         self._muted = False
@@ -46,6 +50,8 @@ class CabinMonitor:
     def suppress_playback(self) -> Iterator[None]:
         self._muted = True
         self._reset_shout()
+        if self._profanity is not None:
+            self._profanity.reset()
         try:
             yield
         finally:
@@ -67,6 +73,7 @@ class CabinMonitor:
         return self._total_db / len(self._levels) if self._levels else FLOOR_DB
 
     def measure(self, now: float) -> AudioFeatures:
+        swear_count = self._profanity.count(now) if self._profanity is not None else 0
         powers: list[float] = []
         speaking = False
         oldest = max(self._first_clean_frame, now - self._settings.cabin_baseline_s)
@@ -78,6 +85,8 @@ class CabinMonitor:
                 ):
                     self._reset_shout()
                     self._vad = Vad(2)
+                    if self._profanity is not None:
+                        self._profanity.reset()
                 self._cursor = frame.sequence
                 if frame.ended_at < oldest:
                     continue
@@ -87,7 +96,10 @@ class CabinMonitor:
                 power = float(np.mean(samples * samples)) / (32768**2)
                 level = dbfs(power)
                 powers.append(power)
-                speaking |= self._vad.is_speech(frame.pcm, SAMPLE_RATE)
+                frame_speaking = self._vad.is_speech(frame.pcm, SAMPLE_RATE)
+                speaking |= frame_speaking
+                if self._profanity is not None:
+                    self._profanity.feed(frame, frame_speaking)
 
                 reference = self._shout_reference
                 if reference is None and self._levels:
@@ -112,7 +124,7 @@ class CabinMonitor:
             speaking=speaking,
             shouting=shout_duration >= self._settings.cabin_shout_s
             or isclose(shout_duration, self._settings.cabin_shout_s),
-            swear_count_60s=0,
+            swear_count_60s=swear_count,
             anger_voice_p=None,
         )
 
