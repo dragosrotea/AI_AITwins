@@ -8,7 +8,7 @@ from collections.abc import Callable
 from functools import cache
 from math import isfinite
 from pathlib import Path
-from typing import get_args
+from typing import TypeVar, get_args
 
 from backend.schemas import Intent
 
@@ -19,6 +19,7 @@ PROMPTS = Path(__file__).resolve().parents[2] / "config" / "prompts"
 ALERT_FIELDS = ("event_type", "type", "tier", "signals", "trip_time", "preferences", "lang")
 SPOKEN_INTENTS = set(get_args(Intent)) - {"NONE"}
 WORDS = re.compile(r"\b[^\W_]+(?:['’][^\W_]+)*\b")
+T = TypeVar("T")
 
 
 @cache
@@ -50,8 +51,8 @@ async def _request(
     payload: dict,
     timeout_s: float,
     limit_s: float,
-    validate: Callable[[str], str | None],
-) -> str | None:
+    validate: Callable[[str], T | None],
+) -> T | None:
     try:
         if not isfinite(timeout_s) or timeout_s <= 0:
             return None

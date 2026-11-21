@@ -14,6 +14,7 @@ from tempfile import NamedTemporaryFile
 
 import miniaudio
 
+from backend.llm.engagement import engagement_clips
 from backend.llm.templates import CATALOG, english_templates
 
 from .tts import DEMO_LINES, synthesize
@@ -66,11 +67,14 @@ def tone(hz: int, duration_s: float) -> bytes:
     )
 
 
-async def render(tones_only: bool) -> None:
-    entries = [] if tones_only else speech_entries(CATALOG)
+async def render(tones_only: bool, *, engagement_only: bool = False) -> None:
     ASSETS.mkdir(parents=True, exist_ok=True)
-    write_wav("chime", tone(880, 0.20))
-    write_wav("alarm", (tone(1200, 0.25) + bytes(RATE // 5 * 2)) * 2 + tone(1200, 0.25))
+    if engagement_only:
+        entries = [(key, "en", text) for key, text in engagement_clips().items()]
+    else:
+        entries = [] if tones_only else speech_entries(CATALOG)
+        write_wav("chime", tone(880, 0.20))
+        write_wav("alarm", (tone(1200, 0.25) + bytes(RATE // 5 * 2)) * 2 + tone(1200, 0.25))
     for name, lang, text in entries:
         audio = await synthesize_template(name, text, lang)
         pcm = miniaudio.decode(audio, nchannels=1, sample_rate=RATE)
@@ -91,10 +95,14 @@ async def synthesize_template(name: str, text: str, lang: str) -> bytes:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--tones-only", action="store_true", help="Render tones offline")
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--tones-only", action="store_true", help="Render tones offline")
+    modes.add_argument(
+        "--engagement-only", action="store_true", help="Render the offline English bank"
+    )
     args = parser.parse_args()
     try:
-        asyncio.run(render(args.tones_only))
+        asyncio.run(render(args.tones_only, engagement_only=args.engagement_only))
     except Exception as error:  # noqa: BLE001 - present provider and file errors at the CLI
         parser.exit(1, f"Audio prerender failed: {error}\n")
 

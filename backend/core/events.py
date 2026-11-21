@@ -73,21 +73,54 @@ class EventRouter:
         self.routing = routing
         self.writer = writer
         self._wording: set[str] = set()  # types waiting on the LLM, so repeats are dropped
+        self.engagement = "quiet"
+        self.road_blocked = False
+        self._engagement_epoch = 0
+        self._engagement_index = 0
+
+    def on_trip(self, data: dict[str, Any]) -> None:
+        self._engagement_epoch += 1
+        self._engagement_index = 0
+        self.manager.cancel_queued(["zoning_out"])
+        self.engagement = (
+            (data.get("pretrip") or {}).get("engagement", "quiet")
+            if data["action"] == "start"
+            else "quiet"
+        )
+
+    def on_road(self, data: dict[str, Any]) -> None:
+        traffic = (data.get("traffic") or "").casefold().replace("_", "-").replace(" ", "-")
+        self.road_blocked = data["load"] == "HIGH" or traffic == "stop-and-go"
+        if self.road_blocked:
+            self._engagement_epoch += 1
+            self.manager.cancel_queued(["zoning_out"])
+
+    def _can_engage(self) -> bool:
+        return (
+            self.engagement != "quiet"
+            and not self.road_blocked
+            and not any(alert.tier != "T1" for alert in self.manager.pending())
+            and not any(kind != "zoning_out" for kind in self._wording)
+        )
 
     async def handle(self, envelope: dict[str, Any]) -> Alert | None:
         if envelope.get("src") != "cv":
             return None
         data = envelope["data"]
         kind = data["type"]
-        tier = self.routing["tiers"].get(kind)
-        if tier is None or kind not in TEMPLATES:
+        is_engagement = kind == "zoning_out"
+        tier = "T1" if is_engagement else self.routing["tiers"].get(kind)
+        if tier is None or (not is_engagement and kind not in TEMPLATES):
             log.info("detector.event %s from cv: no route, skipped", kind)
             return None
         if data["tier"] != tier:
             log.info("detector.event %s: cv says %s, routing uses %s", kind, data["tier"], tier)
         cancels = self.routing["cancels"].get(kind, [])
         if cancels:
+            self._engagement_epoch += 1
             self.manager.cancel_queued(cancels)  # DD-04, before any wait
+        if is_engagement and not self._can_engage():
+            return None
         if kind in self._wording or any(a.type == kind for a in self.manager.pending()):
             return None  # one alert per type at a time
         reason = self.manager.blocked(kind, tier)
@@ -96,6 +129,8 @@ class EventRouter:
             return None
         self._wording.add(kind)
         try:
+            if is_engagement:
+                return await self._engage(data)
             ctx = {"event_type": kind, "tier": tier, "signals": data.get("signals", {})}
             wording = await self.writer.write(kind, tier, ctx)
         finally:
@@ -126,4 +161,37 @@ class EventRouter:
                 alert.alert_id,
                 wording.path,
             )
+        return alert
+
+    async def _engage(self, data: dict[str, Any]) -> Alert | None:
+        try:
+            from backend.llm import generate_engagement
+            from backend.llm.engagement import engagement_audio_key
+        except ImportError:
+            log.warning("Engagement dependencies unavailable")
+            return None
+        epoch = self._engagement_epoch
+        item = await generate_engagement(
+            {
+                "engagement": self.engagement,
+                "region": data.get("signals", {}).get("region"),
+                "fallback_index": self._engagement_index,
+            },
+            self.writer.timeout_s,
+        )
+        if item is None or epoch != self._engagement_epoch or not self._can_engage():
+            return None
+        text = item["text"]
+        alert = self.manager.submit(
+            "zoning_out",
+            "T1",
+            text,
+            short_text=text,
+            signals={"event_id": data["event_id"], "score": data["score"]},
+            lang="en",
+            audio_key=engagement_audio_key(text),
+            engagement_answer=item["answer"],
+        )
+        if alert is not None:
+            self._engagement_index += 1
         return alert
