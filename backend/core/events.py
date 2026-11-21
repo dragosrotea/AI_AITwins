@@ -69,6 +69,10 @@ TEMPLATES: dict[str, dict[str, tuple[str, str]]] = {
         "en": ("That sounded stressful. Shall we take a slow breath together?", "Are you okay?"),
         "ro": ("A fost un moment tensionat. Respirăm adânc împreună?", "Ești bine?"),
     },
+    "crash_candidate": {  # CR-02, LEAD-T22: from core's crash detector
+        "en": ("The car stopped suddenly. Are you okay?", "Are you okay?"),
+        "ro": ("Mașina s-a oprit brusc. Ești bine?", "Ești bine?"),
+    },
     "checkin_due": {  # CI-05, LEAD-T20
         "en": ("Quick check-in. How are you feeling right now?", "How are you feeling?"),
         "ro": ("Verificare rapidă. Cum te simți acum?", "Cum te simți?"),

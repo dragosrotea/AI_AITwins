@@ -31,6 +31,7 @@ from backend.bus.client import BusClient
 from backend.config import get_config
 from backend.core.alerts import HELP_TEXT, Alert, AlertManager
 from backend.core.checkin import CheckinScheduler
+from backend.core.crash import CrashDetector
 from backend.core.events import TEMPLATES, EventRouter
 from backend.core.fusion import RageFusion
 from backend.core.triplog import TripLog
@@ -334,8 +335,13 @@ def attach_alerts(
 
     def on_emergency(alert: Alert, reply: dict[str, Any] | None) -> None:
         critical("help" if reply else "crash_no_response", alert, reply)
+        if alert.type == "crash_candidate":
+            # The escalated crash alert is the emergency: the dashboard shows the banner with
+            # the contact and location (no Twilio keys, LEAD-T22). No extra crash_candidate
+            # alert, or the dashboard would start a second countdown.
+            return
         if reply is None or alert.signals.get("emergency_confirmation"):
-            return  # a crash alarm keeps sounding; "help" to the confirmation does not loop
+            return  # "help" to the confirmation does not loop
         text, short = HELP_TEXT.get(alert.lang, HELP_TEXT["en"])
         manager.submit(
             alert.type,
@@ -349,6 +355,7 @@ def attach_alerts(
 
     manager.on_alarm = on_alarm
     manager.on_emergency = on_emergency
+    manager.countdowns = {"crash_candidate": cfg["core"]["crash"]["countdown_s"]}  # CR-02
     bus.subscribe(["voice.status"], checked("voice.status", manager.on_voice_status))
     bus.subscribe(["voice.reply"], checked("voice.reply", manager.on_voice_reply))
 
@@ -431,6 +438,16 @@ def attach_fusion(bus: BusClient, cfg: dict[str, Any], triplog: TripLog) -> Rage
     return fusion
 
 
+def attach_crash(bus: BusClient, cfg: dict[str, Any]) -> CrashDetector:
+    """Crash detection (LEAD-T22). Core feeds it its own vehicle.motion samples directly."""
+
+    def emit(data: dict[str, Any]) -> None:
+        validate("detector.event", data)
+        bus.publish_nowait("detector.event", data)  # routed back to core: T3 with a countdown
+
+    return CrashDetector(cfg["core"]["crash"], emit)
+
+
 def attach_zoning(bus: BusClient, cfg: dict[str, Any]) -> ZoningFusion:
     """Zoning-out fusion (LEAD-T19). Core feeds it its own vehicle.motion samples directly."""
 
@@ -458,6 +475,7 @@ async def run_live(bus: BusClient, cfg: dict[str, Any]) -> None:
     checkins = attach_checkins(bus, cfg, alerts, writer)
     fusion = attach_fusion(bus, cfg, triplog)
     zoning = attach_zoning(bus, cfg)
+    crash = attach_crash(bus, cfg)
     injector = attach_injector(bus, cfg)
     trips = load_trips(vehicle)
     if trips:
@@ -468,6 +486,7 @@ async def run_live(bus: BusClient, cfg: dict[str, Any]) -> None:
             sample = injector.apply(player.step())
             fusion.on_vehicle(sample, time.monotonic())
             zoning.on_vehicle(sample, time.monotonic())
+            crash.on_vehicle(sample, time.monotonic())
             return sample
     else:
         log.warning("no UAH-DriveSet trips found; publishing the synthetic drive (source sim)")
@@ -478,6 +497,7 @@ async def run_live(bus: BusClient, cfg: dict[str, Any]) -> None:
             sample = injector.apply(vehicle_sample(time.monotonic() - started, speed))
             fusion.on_vehicle(sample, time.monotonic())
             zoning.on_vehicle(sample, time.monotonic())
+            crash.on_vehicle(sample, time.monotonic())
             return sample
 
     await bus.connect()

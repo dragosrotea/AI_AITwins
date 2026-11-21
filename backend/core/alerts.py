@@ -27,6 +27,11 @@ on_emergency. UNCLEAR, NONE or a timeout is a miss: the first max_repeats misses
 short text, the next escalates T1 -> T2 -> T3; a miss at T3 after its repeats calls on_alarm
 (and on_emergency after a crash) and starts a continuous alarm (VR-05): voice plays
 alarm_audio_key and listens, again and again, until any reply or alarm_rounds rounds.
+
+Countdown alerts (LEAD-T22, CR-02: types in `countdowns`, e.g. crash_candidate: 20 s): the
+countdown starts when the alert is first spoken. A miss sounds the alarm again instead of
+repeating or escalating; OK (or any non-HELP answer) closes it; HELP or the end of the countdown
+publishes it as escalated (the dashboard's emergency banner) and calls on_emergency.
 """
 
 from __future__ import annotations
@@ -96,6 +101,7 @@ class Alert:
     seq: int = 0  # submission order, for FIFO within a tier
     engagement_answer: str | None = None
     alarm_rounds: int = 0  # VR-05: continuous alarm after a T3 miss
+    countdown_until: float | None = None  # CR-02: emergency when this passes unanswered
 
 
 def _noop(alert: Alert, reply: dict[str, Any] | None) -> None:
@@ -131,6 +137,7 @@ class AlertManager:
         self.queue: list[Alert] = []
         self.active: Alert | None = None
         self._seq = itertools.count()
+        self.countdowns: dict[str, float] = {}  # type -> seconds (CR-02), set by core
         self._resume: Callable[[], None] | None = None  # next voice.say, after voice_gap_s
         self._resume_at = 0.0
 
@@ -239,6 +246,9 @@ class AlertManager:
         if alert.intent in MISSES:
             self._miss(alert)
             return
+        if alert.countdown_until is not None and alert.intent == "HELP":
+            self._emergency(alert, data)  # CR-02: "help" continues to the emergency
+            return
         self._close(alert)
         if alert.intent == "NOT_OK":
             self.on_follow_up(alert, data)
@@ -248,6 +258,14 @@ class AlertManager:
             self.on_answer(alert, data)
 
     def tick(self) -> None:
+        active = self.active
+        if (
+            active is not None
+            and active.countdown_until is not None
+            and self.clock() >= active.countdown_until
+        ):
+            self._emergency(active, None)  # CR-02: silence until the countdown ends
+            return
         if self._resume is not None:
             if self.clock() >= self._resume_at:
                 resume, self._resume = self._resume, None
@@ -299,6 +317,8 @@ class AlertManager:
         self.active = alert
         if first:
             alert.spoken = alert.text
+        if alert.countdown_until is None and alert.type in self.countdowns:
+            alert.countdown_until = self.clock() + self.countdowns[alert.type]
         if alert.tier == "T3":
             level = self.cfg["t3_music_level"]
         else:  # per type first: road rage only lowers the music by 30% (RR-06)
@@ -318,13 +338,17 @@ class AlertManager:
             "lang": alert.lang,
             "listen_s": self.cfg["listen_s"],
         }
-        if alert.alarm_rounds and alert.spoken == ALARM_TEXT[alert.lang]:
+        if alert.spoken == ALARM_TEXT[alert.lang]:
             say["audio_key"] = self.cfg["alarm_audio_key"]  # VR-05: the alarm clip, not speech
         elif alert.audio_key and alert.spoken == alert.text:
             say["audio_key"] = alert.audio_key  # the clip matches only the original text
         self.publish("voice.say", say)
 
     def _miss(self, alert: Alert) -> None:
+        if alert.countdown_until is not None:  # CR-02: keep the alarm going until it ends
+            alert.spoken = ALARM_TEXT[alert.lang]
+            self._later(lambda: self._speak(alert, first=False))
+            return
         alert.misses += 1
         if alert.misses <= self.cfg["max_repeats"]:
             log.info("%s %s: miss %d, repeating", alert.tier, alert.type, alert.misses)
@@ -353,6 +377,14 @@ class AlertManager:
         alert.tier, alert.misses = next_tier, 0
         alert.spoken = ESCALATE_TEXT[alert.lang]
         self._later(lambda: self._speak(alert, first=False))
+
+    def _emergency(self, alert: Alert, reply: dict[str, Any] | None) -> None:
+        log.warning("%s %s: emergency (%s)", alert.tier, alert.type, "help" if reply else "silence")
+        self._resume = None
+        self._set_status(alert, "escalated")
+        self.active = None
+        self.on_emergency(alert, reply)
+        self._later(self._start_next)
 
     def _close(self, alert: Alert) -> None:
         self._set_status(alert, "closed")

@@ -70,5 +70,8 @@ def test_real_demo_shortens_windows() -> None:
     assert demo["core"]["zoning"]["monotony_window_s"] == 60
     assert demo["cv"]["zoning_stare_s"] == 30
     assert (
-        demo["core"]["checkin"]["base_interval_min"] < base["core"]["checkin"]["base_interval_min"]
+        demo["core"]["alerts"]["noncritical_min_interval_s"]
+        < base["core"]["alerts"]["noncritical_min_interval_s"]
     )
+    # Check-ins keep their real values so demo step 1 shows 15 min / 1:45 (LEAD-T21).
+    assert demo["core"]["checkin"] == base["core"]["checkin"]

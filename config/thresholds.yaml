@@ -110,8 +110,9 @@ core:
     cancels:                       # DD-04: tired drivers get a break, not a game
       drowsiness: [zoning_out]
       microsleep: [zoning_out]
-    fusion_tiers:                  # core's own detector.event types (LEAD-T17/T18)
+    fusion_tiers:                  # core's own detector.event types (LEAD-T17/T18/T22)
       road_rage: T2
+      crash_candidate: T3          # CR-02
     max_words:                     # tighter than the LLM's own 25-word check
       road_rage: 20                # RR-06
     firm_variant:                  # template variant for firm messages (RR-05, score >= 85)
