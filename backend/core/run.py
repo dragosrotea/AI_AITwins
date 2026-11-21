@@ -8,7 +8,8 @@ cycles one alert every core.fake.alert_every_s through queued, speaking, listeni
 with voice.say, control.music and checkin.schedule, so voice and the dashboard have a partner.
 A voice.reply for the active alert closes it; otherwise it closes after listen_s + reply_grace_s.
 Live mode replays UAH-DriveSet (backend/core/vehicle.py) and obeys control.replay; without the
-dataset it falls back to the synthetic drive. The Alert Manager arrives with LEAD-T10.
+dataset it falls back to the synthetic drive. The Alert Manager (LEAD-T10) runs alongside; detector
+events start feeding it with LEAD-T11.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from pydantic import ValidationError
 
 from backend.bus.client import BusClient
 from backend.config import get_config
+from backend.core.alerts import Alert, AlertManager
 from backend.core.vehicle import Injector, Player, load_trips
 from backend.schemas import validate
 
@@ -190,8 +192,45 @@ async def publish_at_rate(bus: BusClient, rate_hz: float, next_sample: Any) -> N
         await asyncio.sleep(max(0.0, next_tick - time.monotonic()))
 
 
+def log_hook(name: str) -> Any:
+    """Placeholder hook until the follow-up and emergency flows exist (T16, X3)."""
+
+    def hook(alert: Alert, reply: dict[str, Any] | None) -> None:
+        log.warning("%s hook: %s %s (reply %s)", name, alert.tier, alert.type, reply)
+
+    return hook
+
+
+def attach_alerts(bus: BusClient, cfg: dict[str, Any]) -> AlertManager:
+    """Alert Manager (LEAD-T10) on the bus; core must run tick_loop() alongside."""
+    manager = AlertManager(
+        cfg["core"]["alerts"],
+        bus.publish_nowait,
+        on_follow_up=log_hook("follow-up"),
+        on_emergency=log_hook("emergency"),
+        on_alarm=log_hook("alarm"),
+    )
+    bus.subscribe(["voice.status"], checked("voice.status", manager.on_voice_status))
+    bus.subscribe(["voice.reply"], checked("voice.reply", manager.on_voice_reply))
+
+    def on_trip(data: dict[str, Any]) -> None:
+        if data["action"] == "start" and data.get("pretrip"):
+            manager.lang = data["pretrip"]["lang"]
+            log.info("driver language: %s", manager.lang)
+
+    bus.subscribe(["control.trip"], checked("control.trip", on_trip))
+    return manager
+
+
+async def tick_loop(manager: AlertManager, period_s: float = 0.1) -> None:
+    while True:
+        manager.tick()
+        await asyncio.sleep(period_s)
+
+
 async def run_live(bus: BusClient, cfg: dict[str, Any]) -> None:
     vehicle = cfg["core"]["vehicle"]
+    alerts = attach_alerts(bus, cfg)
     injector = attach_injector(bus, cfg)
     trips = load_trips(vehicle)
     if trips:
@@ -210,7 +249,9 @@ async def run_live(bus: BusClient, cfg: dict[str, Any]) -> None:
 
     await bus.connect()
     log.info("core live connected to %s", bus.url)
-    await publish_at_rate(bus, vehicle["rate_hz"], next_sample)
+    async with asyncio.TaskGroup() as tasks:
+        tasks.create_task(publish_at_rate(bus, vehicle["rate_hz"], next_sample))
+        tasks.create_task(tick_loop(alerts))
 
 
 def main() -> None:

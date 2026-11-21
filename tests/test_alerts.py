@@ -1,0 +1,332 @@
+"""Alert Manager v1 (LEAD-T10): every path, driven by a fake clock."""
+
+from __future__ import annotations
+
+from typing import Any
+
+import pytest
+
+from backend.config import load_config
+from backend.core.alerts import ESCALATE_TEXT, REPEAT_TEXT, Alert, AlertManager
+from backend.schemas import validate
+
+CFG = load_config("default")["core"]["alerts"]
+GAP = CFG["voice_gap_s"]
+LISTEN = CFG["listen_s"] + CFG["reply_grace_s"]
+FIRST_DEADLINE = CFG["speak_max_s"] + LISTEN
+
+
+class FakeClock:
+    def __init__(self) -> None:
+        self.now = 100.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+class Rig:
+    """An AlertManager wired to a fake clock, a message recorder and recording hooks."""
+
+    def __init__(self) -> None:
+        self.clock = FakeClock()
+        self.sent: list[tuple[str, dict[str, Any]]] = []
+        self.hooks: list[tuple[str, str, str | None]] = []
+        self.am = AlertManager(
+            CFG,
+            self.publish,
+            self.clock,
+            on_follow_up=self.hook("follow_up"),
+            on_emergency=self.hook("emergency"),
+            on_alarm=self.hook("alarm"),
+        )
+
+    def publish(self, topic: str, data: dict[str, Any]) -> None:
+        validate(topic, data)  # everything the manager sends must match the contract
+        self.sent.append((topic, data))
+
+    def hook(self, name: str) -> Any:
+        def record(alert: Alert, reply: dict[str, Any] | None) -> None:
+            self.hooks.append((name, alert.type, reply["intent"] if reply else None))
+
+        return record
+
+    def advance(self, seconds: float, step: float = 0.1) -> None:
+        end = self.clock.now + seconds
+        while self.clock.now < end:
+            self.clock.now = min(end, self.clock.now + step)
+            if end - self.clock.now < 1e-9:
+                self.clock.now = end  # land exactly on the target, despite float steps
+            self.am.tick()
+
+    def says(self) -> list[dict[str, Any]]:
+        return [d for t, d in self.sent if t == "voice.say"]
+
+    def statuses(self, alert: Alert | None = None) -> list[str]:
+        return [
+            d["status"]
+            for t, d in self.sent
+            if t == "alert.state" and (alert is None or d["alert_id"] == alert.alert_id)
+        ]
+
+    def music(self) -> list[tuple[bool, float]]:
+        return [(d["duck"], d["level"]) for t, d in self.sent if t == "control.music"]
+
+    def listening(self, alert: Alert) -> None:
+        self.am.on_voice_status({"alert_id": alert.alert_id, "state": "listening"})
+
+    def reply(self, alert: Alert, intent: str, transcript: str = "yes") -> None:
+        self.am.on_voice_reply(
+            {
+                "alert_id": alert.alert_id,
+                "transcript": transcript,
+                "intent": intent,
+                "latency_ms": 420,
+                "path": "keyword",
+            }
+        )
+
+
+@pytest.fixture
+def rig() -> Rig:
+    return Rig()
+
+
+def submit(rig: Rig, type: str = "distraction", tier: str = "T2", **kw: Any) -> Alert:
+    alert = rig.am.submit(type, tier, f"{type} text?", short_text=f"{type} short?", **kw)
+    assert alert is not None
+    return alert
+
+
+# Happy paths
+
+
+def test_ok_reply_closes_and_restores_music(rig: Rig) -> None:
+    alert = submit(rig)
+    assert rig.statuses() == ["queued", "speaking"]
+    say = rig.says()[0]
+    assert say["alert_id"] == alert.alert_id and say["tier"] == "T2"
+    assert say["text"] == "distraction text?" and say["listen_s"] == CFG["listen_s"]
+    assert rig.music() == [(True, CFG["music_duck_volume"] / 100)]
+    rig.listening(alert)
+    assert rig.statuses()[-1] == "listening"
+    rig.reply(alert, "OK")
+    closed = [d for t, d in rig.sent if t == "alert.state"][-1]
+    assert closed["status"] == "closed" and closed["intent"] == "OK"
+    assert closed["reply"] == "yes" and closed["latency_ms"] == 420
+    assert rig.am.active is None
+    rig.advance(GAP)
+    assert rig.music()[-1] == (False, 1.0)
+    assert rig.hooks == []
+
+
+def test_reply_without_voice_status_still_closes(rig: Rig) -> None:
+    """Fake voice sends no voice.status, only a reply."""
+    alert = submit(rig)
+    rig.reply(alert, "OK")
+    assert rig.statuses() == ["queued", "speaking", "closed"]
+
+
+def test_answer_closes(rig: Rig) -> None:
+    alert = submit(rig, "zoning_out", "T1")
+    rig.reply(alert, "ANSWER", "Lisbon")
+    assert rig.statuses()[-1] == "closed" and rig.hooks == []
+
+
+def test_not_ok_calls_follow_up(rig: Rig) -> None:
+    alert = submit(rig, "drowsiness")
+    rig.reply(alert, "NOT_OK", "I'm tired")
+    assert rig.statuses()[-1] == "closed"
+    assert rig.hooks == [("follow_up", "drowsiness", "NOT_OK")]
+
+
+def test_help_calls_emergency(rig: Rig) -> None:
+    alert = submit(rig, "checkin_due", "T1")
+    rig.reply(alert, "HELP", "help")
+    assert rig.statuses()[-1] == "closed"
+    assert rig.hooks == [("emergency", "checkin_due", "HELP")]
+
+
+# Misses: repeat once, then escalate (VR-05)
+
+
+def test_unclear_repeats_once_with_short_text_after_gap(rig: Rig) -> None:
+    alert = submit(rig)
+    rig.reply(alert, "UNCLEAR", "mmh")
+    assert len(rig.says()) == 1  # voice is still busy: wait for the gap
+    rig.advance(GAP)
+    repeat = rig.says()[1]
+    assert repeat["alert_id"] == alert.alert_id and repeat["text"] == "distraction short?"
+    assert repeat["tier"] == "T2"
+    rig.reply(alert, "OK")
+    assert rig.statuses(alert)[-1] == "closed"
+
+
+def test_second_miss_escalates_one_tier(rig: Rig) -> None:
+    alert = submit(rig)  # T2
+    rig.reply(alert, "UNCLEAR")
+    rig.advance(GAP)
+    rig.reply(alert, "NONE", "")
+    assert rig.statuses(alert)[-1] == "escalated"
+    rig.advance(GAP)
+    say = rig.says()[-1]
+    assert say["tier"] == "T3" and say["text"] == ESCALATE_TEXT["en"]
+    assert rig.music()[-1] == (True, CFG["t3_music_level"])  # T3: music muted
+    assert alert.tier == "T3"
+
+
+def test_t1_escalates_to_t2(rig: Rig) -> None:
+    alert = submit(rig, "checkin_due", "T1")
+    for _ in range(2):
+        rig.reply(alert, "NONE", "")
+        rig.advance(GAP)
+    assert rig.says()[-1]["tier"] == "T2"
+
+
+def test_silence_through_t3_sounds_alarm(rig: Rig) -> None:
+    """VR-05 acceptance: staying silent through the prompts produces the alarm."""
+    alert = submit(rig)  # T2: say, repeat, escalate to T3: say, repeat, alarm
+    for _ in range(4):
+        rig.reply(alert, "NONE", "")
+        rig.advance(GAP)
+    assert [s["tier"] for s in rig.says()] == ["T2", "T2", "T3", "T3"]
+    assert rig.hooks == [("alarm", "distraction", None)]
+    assert rig.am.active is None
+    assert rig.statuses(alert).count("escalated") == 2
+
+
+def test_silence_after_crash_also_starts_emergency(rig: Rig) -> None:
+    alert = submit(rig, "crash_candidate", "T3")
+    for _ in range(2):
+        rig.reply(alert, "NONE", "")
+        rig.advance(GAP)
+    assert rig.hooks == [("alarm", "crash_candidate", None), ("emergency", "crash_candidate", None)]
+
+
+def test_romanian_repeat_without_short_text(rig: Rig) -> None:
+    alert = rig.am.submit("phone", "T2", "Lasă telefonul. Ești atent?", lang="ro")
+    assert alert is not None
+    rig.reply(alert, "UNCLEAR")
+    rig.advance(GAP)
+    assert rig.says()[-1]["text"] == REPEAT_TEXT["ro"] and rig.says()[-1]["lang"] == "ro"
+
+
+# Timeouts
+
+
+def test_no_status_and_no_reply_times_out_from_voice_say(rig: Rig) -> None:
+    alert = submit(rig)
+    rig.advance(FIRST_DEADLINE - 0.2)
+    assert len(rig.says()) == 1
+    rig.advance(0.3)
+    assert alert.misses == 1 and alert.intent == "NONE"
+    rig.advance(GAP)
+    assert len(rig.says()) == 2
+
+
+def test_listening_restarts_the_window(rig: Rig) -> None:
+    alert = submit(rig)
+    rig.advance(5.0)  # speaking took 5 s
+    rig.listening(alert)
+    rig.advance(LISTEN - 0.2)
+    assert alert.misses == 0
+    rig.advance(0.3)
+    assert alert.misses == 1
+
+
+def test_no_timeout_while_waiting_in_the_gap(rig: Rig) -> None:
+    alert = submit(rig)
+    rig.reply(alert, "UNCLEAR")
+    rig.clock.now += 10 * FIRST_DEADLINE  # a long stall must not count as another miss
+    rig.am.tick()
+    assert alert.misses == 1 and len(rig.says()) == 2
+
+
+# Queue and priority (AL-01)
+
+
+def test_one_at_a_time_then_by_tier_then_fifo(rig: Rig) -> None:
+    first = submit(rig, "checkin_due", "T1")
+    t1 = submit(rig, "zoning_out", "T1")
+    t2 = submit(rig, "drowsiness", "T2")
+    assert len(rig.says()) == 1 and rig.am.active is first
+    assert [a.type for a in rig.am.queue] == ["drowsiness", "zoning_out"]
+    rig.reply(first, "OK")
+    rig.advance(GAP)
+    assert rig.am.active is t2
+    rig.reply(t2, "OK")
+    rig.advance(GAP)
+    assert rig.am.active is t1
+    assert (False, 1.0) not in rig.music()  # music stays ducked between back-to-back alerts
+
+
+def test_t3_preempts_and_the_interrupted_alert_restarts(rig: Rig) -> None:
+    t2 = submit(rig, "distraction", "T2")
+    rig.listening(t2)
+    t3 = submit(rig, "microsleep", "T3")
+    assert rig.am.active is t3
+    assert rig.says()[-1]["alert_id"] == t3.alert_id  # no gap for T3
+    assert rig.statuses(t2)[-1] == "queued"
+    rig.reply(t2, "OK")  # a late reply for the interrupted alert is ignored
+    assert rig.am.active is t3
+    rig.reply(t3, "OK")
+    rig.advance(GAP)
+    assert rig.am.active is t2 and rig.says()[-1]["text"] == "distraction text?"
+
+
+def test_t3_does_not_preempt_t3(rig: Rig) -> None:
+    first = submit(rig, "microsleep", "T3")
+    submit(rig, "crash_candidate", "T3")
+    assert rig.am.active is first and len(rig.says()) == 1
+
+
+def test_t3_preempts_an_alert_waiting_to_repeat(rig: Rig) -> None:
+    t2 = submit(rig)
+    rig.reply(t2, "UNCLEAR")  # repeat pending in the gap
+    t3 = submit(rig, "microsleep", "T3")
+    assert rig.am.active is t3
+    rig.advance(GAP)
+    assert rig.says()[-1]["alert_id"] == t3.alert_id  # the old repeat was dropped
+
+
+def test_t3_skips_the_gap_after_a_close(rig: Rig) -> None:
+    t2 = submit(rig)
+    rig.reply(t2, "OK")
+    t3 = submit(rig, "microsleep", "T3")
+    assert rig.says()[-1]["alert_id"] == t3.alert_id
+
+
+def test_new_alert_waits_for_the_gap_after_a_close(rig: Rig) -> None:
+    first = submit(rig)
+    rig.reply(first, "OK")
+    second = submit(rig, "phone", "T2")
+    assert rig.am.active is None and len(rig.says()) == 1
+    rig.advance(GAP)
+    assert rig.am.active is second and len(rig.says()) == 2
+
+
+def test_duplicate_type_is_dropped(rig: Rig) -> None:
+    submit(rig, "distraction")
+    assert rig.am.submit("distraction", "T2", "again?") is None
+    submit(rig, "phone")
+    assert rig.am.submit("phone", "T2", "again?") is None
+
+
+# Ignored input
+
+
+def test_stale_and_unknown_messages_are_ignored(rig: Rig) -> None:
+    alert = submit(rig)
+    rig.am.on_voice_reply({"alert_id": "a-other", "intent": "OK"})
+    rig.am.on_voice_status({"alert_id": "a-other", "state": "listening"})
+    assert rig.am.active is alert and alert.status == "speaking"
+    rig.reply(alert, "UNCLEAR")
+    rig.reply(alert, "UNCLEAR")  # duplicate during the gap: not a second miss
+    assert alert.misses == 1
+    rig.am.on_voice_status({"alert_id": alert.alert_id, "state": "idle"})
+    assert alert.status == "speaking"
+
+
+def test_idle_manager_ignores_voice_messages(rig: Rig) -> None:
+    rig.am.on_voice_reply({"alert_id": "a-x", "intent": "OK"})
+    rig.am.tick()
+    assert rig.sent == []
