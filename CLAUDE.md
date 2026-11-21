@@ -30,12 +30,16 @@ R2 LLM in-car reaction, R3 live demo on a real camera feed, R4 live dashboard.
 
 ## Commands
 
-Fill in exact module paths once the skeleton exists (LEAD-T06).
-
 ```bash
 pip install -r requirements.txt
-scripts/run_all.sh                      # broker + all processes
+scripts/run_all.sh                      # broker + all processes (missing modules are skipped)
 scripts/run_all.sh --fake               # same, every process on synthetic data
+scripts/run_all.sh --fake=cv,hr         # only these on synthetic data
+python -m backend.bus.broker            # broker alone; GET http://localhost:8765/stats
+python -m backend.core.run --fake       # core: vehicle.motion 10 Hz + alert cycle
+python -m backend.cv.run --fake         # CV;  python -m backend.voice.run --fake  # voice
+python -m backend.integrations.hr.run --sim   # HR (UI owner, not written yet)
+python scripts/smoke_test.py --ignore bio.hr  # rates + schema check; --ignore a switched-off topic
 python scripts/smoke_test.py            # checks every topic arrives at its expected rate
 pytest -q                               # tests
 ruff check . && ruff format .           # lint and format

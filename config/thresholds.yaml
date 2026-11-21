@@ -1,5 +1,149 @@
+# DriveMate thresholds: every threshold, weight, cooldown and window lives here.
+# Each owner edits only their own section (core: lead, cv: CV, voice: Voice & LLM, ui: Frontend).
+# Values are starting points from docs/requirements.md, to calibrate on Saturday.
+# Load with backend.config.load_config(); DRIVEMATE_PROFILE=demo applies profiles.demo on top.
+# A profile may only override keys that already exist below (typos fail at load time).
+
+core:
+  vehicle:
+    rate_hz: 10                    # DB-02
+  alerts:
+    llm_timeout_s: 2.0             # AL-05, NF-02
+    t1_min_interval_s: 300         # AL-02: at most one T1 prompt per 5 min
+    noncritical_min_interval_s: 120  # AL-02: at most one non-critical prompt per 2 min
+    listen_s: 8                    # VR-02: listening window after the alert ends
+    reply_grace_s: 3               # LEAD-T10: no reply within listen_s + 3 s
+    max_repeats: 1                 # VR-05: repeat once, then escalate a tier
+    slow_reply_s: 3                # VR-07: two slow replies in a row raise fatigue
+    music_duck_volume: 20          # 0-100 while speaking and listening
+  rage:
+    trigger_score: 60              # RR-05
+    firm_score: 85                 # RR-05: firmer message, suggest pulling over
+    min_modalities: 2              # RR-05: 2 of 3 (face, voice, driving) must agree
+    face_alone_s: 5                # RR-05
+    harsh_g: 0.4                   # RR-04
+    harsh_window_s: 60             # RR-04
+    cooldown_s: 180                # RR-07
+    max_per_window: 3              # RR-07
+    max_window_s: 1800             # RR-07
+    weights: {face: 0.4, voice: 0.35, driving: 0.25}
+  zoning:
+    threshold: 0.6
+    monotony_speed_kmh: 70         # ZO-01
+    monotony_spread_kmh: 5         # LEAD-T19
+    monotony_window_s: 600         # ZO-01: 10 min
+    engagement_interval_s: 300     # ZO-05
+    max_engagements: 3             # ZO-05
+    engagement_window_s: 1800      # ZO-05
+    weights: {visual: 0.7, monotony: 0.3}
+  checkin:
+    base_interval_min: 30          # CI-02
+    short_sleep_h: 6               # CI-02
+    high_tiredness: 4              # CI-02
+    circadian_factor: 0.66         # CI-02
+    circadian_dips: ["00:00-06:00", "14:00-16:00"]
+    min_interval_min: 10           # CI-02
+    max_interval_min: 45           # CI-02
+    break_every_min: 120           # CI-03
+    break_risk_min: 105            # CI-03
+    event_lookback_min: 15         # CI-04
+    event_shorten: 0.30            # CI-04
+    quiet_min: 30                  # CI-04
+    quiet_lengthen: 0.20           # CI-04
+  crash:
+    spike_g: 4.0                   # CR-01
+    stop_speed_kmh: 5              # CR-01
+    stop_within_s: 10              # CR-01
+    countdown_s: 20                # CR-02
+  hr:
+    stress_delta_bpm: 30           # SW-03
+    stress_hold_s: 60              # SW-03
+    fatigue_drop: 0.10             # SW-03
+  inject:
+    harsh_brake_g: -0.6            # LEAD-T09
+    harsh_brake_s: 1.5
+    crash_g: 5.0
+    crash_stop_s: 3
+  fake:                            # core --fake (LEAD-T06): synthetic drive and alert cycle
+    alert_every_s: 15
+    speak_s: 3
+    speed_kmh: 100
+    lang: en
+
+cv:
+  # camera / publisher / fake / face_landmarks: from the cv/cp0 branch (CV owner's layout).
+  camera:
+    index: 0
+    capture_width: 1280
+    capture_height: 720
+    process_width: 640
+    process_height: 360
+  publisher:
+    state_rate_hz: 10
+    broker_url: ws://localhost:8765/bus
+  fake:
+    sequence: all
+  face_landmarks:
+    model_path: models/face_landmarker.task
+    num_faces: 1
+    detection_confidence: 0.5
+    presence_confidence: 0.5
+    tracking_confidence: 0.5
+  # Detection thresholds seeded from docs/requirements.md by the lead; CV owner tunes them.
+  min_fps: 15                      # CV-01
+  frame_rate_hz: 5                 # camera.frame
+  frame_width_px: 320
+  frame_overlay: true
+  perclos_window_s: 60             # CV-05
+  gaze_window_s: 30                # CV-05
+  yawn_window_s: 600               # CV-05
+  no_face_notice_s: 2              # CV-06
+  no_face_warning_s: 5             # CV-06
+  eyes_off_yaw_deg: 30             # DD-01
+  eyes_off_pitch_deg: -20          # DD-01
+  eyes_off_s: 2                    # DD-01
+  microsleep_s: 1.0                # DD-02
+  perclos_threshold: 0.15          # DD-03
+  yawn_count: 3                    # DD-03
+  anger_threshold: 0.6             # RR-01
+  anger_hold_s: 3                  # RR-01
+  phone_hold_s: 1.5                # PH-02
+  zoning_stare_s: 60               # ZO-01
+
 voice:
   # null uses the system default. Use an index from --list-devices to override.
   input_device: null
   output_device: null
   ring_buffer_s: 10
+
+ui:
+  accel_window_s: 60               # DB-02
+  harsh_marker_g: 0.4              # DB-02
+  form_lock_speed_kmh: 5           # CI-06, NF-07
+
+profiles:
+  # 5-minute demo: effects must show within a minute or so.
+  demo:
+    core:
+      alerts:
+        t1_min_interval_s: 60
+        noncritical_min_interval_s: 30
+      rage:
+        cooldown_s: 60
+        max_window_s: 300
+      zoning:
+        monotony_window_s: 60      # LEAD-T19: 60 s in the demo profile
+        engagement_interval_s: 60
+        engagement_window_s: 300
+      checkin:
+        base_interval_min: 3
+        min_interval_min: 1
+        max_interval_min: 5
+        break_every_min: 5
+        break_risk_min: 4
+        event_lookback_min: 2
+        quiet_min: 3
+    cv:
+      perclos_window_s: 30         # DD-03: show within 60 s in demo mode
+      yawn_window_s: 120
+      zoning_stare_s: 30           # ZO-01: fixed stare for 30 s in demo mode
