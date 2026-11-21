@@ -5,6 +5,8 @@ import MusicPlayer from './MusicPlayer'
 import ConversationPanel from './ConversationPanel'
 import ReplayControls from './ReplayControls'
 import { AccelerationChart, CabinChart, DebugCorner, DriverCameraPanel } from './TelemetryPanels'
+import EventTimeline from './EventTimeline'
+import { DriverStatusPanel, PreTripForm } from './DriverPanels'
 
 type RoutePath = '/driver' | '/copilot' | '/debug'
 
@@ -36,14 +38,6 @@ function RouteLink({
   )
 }
 
-function PanelPlaceholder({ title, className = '' }: { title: string; className?: string }) {
-  return (
-    <section className={`panel-placeholder ${className}`}>
-      <p className="panel-label">{title}</p>
-    </section>
-  )
-}
-
 function DriverLayout() {
   return (
     <section className="route-page driver-page" aria-labelledby="driver-page-title">
@@ -54,8 +48,8 @@ function DriverLayout() {
         </div>
       </div>
       <div className="driver-panels">
-        <PanelPlaceholder title="STATUS & SPOKEN MESSAGE" className="driver-status-panel" />
-        <PanelPlaceholder title="NEXT CHECK-IN" className="driver-checkin-panel" />
+        <DriverStatusPanel />
+        <PreTripForm />
       </div>
     </section>
   )
@@ -74,7 +68,7 @@ function CopilotLayout() {
         <DriverCameraPanel />
         <AccelerationChart />
         <ConversationPanel />
-        <PanelPlaceholder title="EVENT TIMELINE" className="copilot-timeline-panel" />
+        <EventTimeline />
         <CabinChart />
         <MusicPlayer />
         <ReplayControls />
