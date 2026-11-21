@@ -23,9 +23,7 @@ def build_emotion_network(torch: Any) -> Any:
                 torch.nn.AdaptiveAvgPool2d((1, 1)),
                 torch.nn.Flatten(),
             )
-            self.classifier = torch.nn.Sequential(
-                torch.nn.Dropout(0.25), torch.nn.Linear(128, 2)
-            )
+            self.classifier = torch.nn.Sequential(torch.nn.Dropout(0.25), torch.nn.Linear(128, 2))
 
         def forward(self, image: Any) -> Any:
             return self.classifier(self.features(image))
@@ -66,9 +64,7 @@ class EmotionModel:
         if frame_bgr is None or not landmarks:
             raise ValueError("Emotion prediction requires a face frame and landmarks")
         height, width = frame_bgr.shape[:2]
-        points = [
-            (float(point.x) * width, float(point.y) * height) for point in landmarks
-        ]
+        points = [(float(point.x) * width, float(point.y) * height) for point in landmarks]
         left = min(point[0] for point in points)
         right = max(point[0] for point in points)
         top = min(point[1] for point in points)
