@@ -242,6 +242,24 @@ def attach_alerts(
     bus: BusClient, cfg: dict[str, Any], triplog: TripLog | None = None
 ) -> tuple[AlertManager, AlertWriter]:
     """Alert Manager (LEAD-T10) on the bus; core must run tick_loop() alongside."""
+    running: set[asyncio.Task[Any]] = set()
+
+    async def grade(alert: Alert, reply: dict[str, Any]) -> None:
+        from backend.llm import grade_answer
+
+        assert alert.engagement_answer is not None
+        result = await grade_answer(alert.text, alert.engagement_answer, reply["transcript"])
+        if result is not None:
+            log.info("Trivia %s: %s", alert.alert_id, result["feedback"])
+            if triplog is not None:
+                triplog.note("trivia_grade", {"alert_id": alert.alert_id, **result})
+
+    def on_answer(alert: Alert, reply: dict[str, Any] | None) -> None:
+        if reply is not None:
+            task = asyncio.create_task(grade(alert, reply))
+            running.add(task)
+            task.add_done_callback(running.discard)
+
     manager = AlertManager(
         cfg["core"]["alerts"],
         bus.publish_nowait,
@@ -250,6 +268,7 @@ def attach_alerts(
         on_alarm=log_hook("alarm"),
         on_submit=alert_created(triplog) if triplog else None,
         on_suppress=alert_suppressed(triplog) if triplog else None,
+        on_answer=on_answer,
     )
     bus.subscribe(["voice.status"], checked("voice.status", manager.on_voice_status))
     bus.subscribe(["voice.reply"], checked("voice.reply", manager.on_voice_reply))
@@ -263,7 +282,8 @@ def attach_alerts(
 
     writer = AlertWriter(cfg["core"]["alerts"]["llm_timeout_s"], TEMPLATES)
     router = EventRouter(manager, cfg["core"]["routing"], writer)
-    running: set[asyncio.Task[Any]] = set()
+    bus.subscribe(["control.trip"], checked("control.trip", router.on_trip))
+    bus.subscribe(["context.road"], checked("context.road", router.on_road))
 
     def on_detector_event(envelope: dict[str, Any]) -> None:
         # Needs the envelope (src), so it validates here instead of through checked().

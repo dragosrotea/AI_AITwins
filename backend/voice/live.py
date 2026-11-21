@@ -17,11 +17,12 @@ from backend.audio.devices import FRAME_MS, FRAME_SAMPLES, SAMPLE_RATE, AudioSet
 from backend.audio.features import CabinMonitor
 from backend.audio.profanity import CabinProfanity
 from backend.bus.client import BusClient
+from backend.llm.engagement import engagement_clips
 from backend.llm.language import is_english
 from backend.llm.templates import english_fallback, english_templates
 from backend.schemas import VoiceReply, VoiceSay, VoiceState, VoiceStatus
 
-from .intents import classify_confirmation
+from .intents import ReplyClassification, classify_confirmation, classify_keyword
 from .latency import LatencySample, elapsed_ms
 from .stt import SpeechExecutor, SpeechToText
 from .tts import DEMO_LINES, play_interruptible, synthesize
@@ -41,6 +42,7 @@ def english_audio() -> dict[str, str]:
     return {
         "demo_en": DEMO_LINES["en"],
         **{key: text for variants in english_templates().values() for text, key in variants},
+        **engagement_clips(),
     }
 
 
@@ -214,6 +216,7 @@ async def interact(
     latency_log: TextIO | None = None,
     *,
     end_silence_s: float = END_SILENCE_S,
+    engagement: bool = False,
 ) -> None:
     timing = LatencySample()
     try:
@@ -275,7 +278,11 @@ async def interact(
             )
             timing.whisper_ms = result.elapsed_ms
             classify_started_at = perf_counter()
-            classification = await classify_confirmation(result.text)
+            if engagement and result.text.strip():
+                intent = "HELP" if classify_keyword(result.text) == "HELP" else "ANSWER"
+                classification = ReplyClassification(intent, "keyword")
+            else:
+                classification = await classify_confirmation(result.text)
             classified_at = perf_counter()
             timing.classification_ms = elapsed_ms(classify_started_at, classified_at)
             timing.speech_to_intent_ms = elapsed_ms(speech_end, classified_at)
@@ -318,8 +325,19 @@ async def run_live(
     end_silence_s = END_SILENCE_S if end_silence_ms is None else end_silence_ms / 1000
     stt = await asyncio.to_thread(SpeechToText, offline=True)
     ready = asyncio.Event()
-    pending: VoiceSay | None = None
+    pending: tuple[VoiceSay, bool] | None = None
+    engagement_alert: str | None = None
     active: asyncio.Task[None] | None = None
+
+    def on_alert_state(envelope: dict) -> None:
+        nonlocal engagement_alert
+        data = envelope["data"]
+        if data.get("status") == "speaking":
+            engagement_alert = (
+                data["alert_id"]
+                if data.get("type") == "zoning_out" and data.get("tier") == "T1"
+                else None
+            )
 
     def on_say(envelope: dict) -> None:
         nonlocal pending
@@ -327,7 +345,7 @@ async def run_live(
         busy = pending is not None or (active is not None and not active.done())
         if busy and alert.tier != "T3":
             return
-        pending = alert
+        pending = (alert, alert.alert_id == engagement_alert)
         profanity.pause()
         if active is not None and not active.done() and not active.cancelling():
             active.cancel()
@@ -343,6 +361,7 @@ async def run_live(
             )
         profanity = CabinProfanity(stt, inference)
         monitor = CabinMonitor(mic, settings, profanity)
+        bus.subscribe(["alert.state"], on_alert_state)
         bus.subscribe(["voice.say"], on_say)
         await bus.connect()
         async with asyncio.TaskGroup() as tasks:
@@ -350,9 +369,10 @@ async def run_live(
             while True:
                 await ready.wait()
                 ready.clear()
-                alert, pending = pending, None
-                if alert is None:
+                next_alert, pending = pending, None
+                if next_alert is None:
                     continue
+                alert, engagement = next_alert
                 active = asyncio.create_task(
                     interact(
                         bus,
@@ -363,6 +383,7 @@ async def run_live(
                         monitor,
                         latency_log,
                         end_silence_s=end_silence_s,
+                        engagement=engagement,
                     )
                 )
                 await asyncio.gather(active, return_exceptions=True)

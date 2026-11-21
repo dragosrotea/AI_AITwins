@@ -1,9 +1,9 @@
-"""Detector events to alerts: CV visual event routing (LEAD-T11, LEAD-T15).
+"""Route CV visual events, Core fusion events, and eligible trivia alerts.
 
 A CV detector.event becomes an alert at the tier from config core.routing.tiers: core decides
 the tier, whatever tier the event carries (a mismatch is logged). Drowsiness and microsleep
-first cancel queued trivia (core.routing.cancels, DD-04). Types without a tier or template are
-logged and skipped, and core's own fusion events (src "core") are ignored so they never loop.
+first cancel queued trivia (core.routing.cancels, DD-04). Core events use fusion_tiers.
+CV zoning_out uses the T1 engagement route and checks trip and road eligibility.
 
 The spoken text comes from AlertWriter (LEAD-T13): the LLM for T1/T2, else the voice engineer's
 catalog. TEMPLATES below are the last-resort lines and supply the short repeat text (VR-05).
@@ -85,23 +85,59 @@ class EventRouter:
         self.routing = routing
         self.writer = writer
         self._wording: set[str] = set()  # types waiting on the LLM, so repeats are dropped
+        self.engagement = "quiet"
+        self.road_blocked = False
+        self._engagement_epoch = 0
+        self._engagement_index = 0
+
+    def on_trip(self, data: dict[str, Any]) -> None:
+        self._engagement_epoch += 1
+        self._engagement_index = 0
+        self.manager.cancel_queued(["zoning_out"])
+        self.engagement = (
+            (data.get("pretrip") or {}).get("engagement", "quiet")
+            if data["action"] == "start"
+            else "quiet"
+        )
+
+    def on_road(self, data: dict[str, Any]) -> None:
+        traffic = (data.get("traffic") or "").casefold().replace("_", "-").replace(" ", "-")
+        self.road_blocked = data["load"] == "HIGH" or traffic == "stop-and-go"
+        if self.road_blocked:
+            self._engagement_epoch += 1
+            self.manager.cancel_queued(["zoning_out"])
+
+    def _can_engage(self) -> bool:
+        return (
+            self.engagement != "quiet"
+            and not self.road_blocked
+            and not any(alert.tier != "T1" for alert in self.manager.pending())
+            and not any(kind != "zoning_out" for kind in self._wording)
+        )
 
     async def handle(self, envelope: dict[str, Any]) -> Alert | None:
         data = envelope["data"]
         kind = data["type"]
         # CV's visual events, and core's own fusion events (road_rage, LEAD-T18); core never
         # routes anything else of its own, so no event can loop.
+        source = envelope.get("src")
         sources = {"cv": self.routing["tiers"], "core": self.routing["fusion_tiers"]}
-        tier = sources.get(envelope.get("src"), {}).get(kind)
-        if tier is None or kind not in TEMPLATES:
-            if envelope.get("src") == "cv":
+        is_engagement = source == "cv" and kind == "zoning_out"
+        tier = "T1" if is_engagement else sources.get(source, {}).get(kind)
+        if tier is None or (not is_engagement and kind not in TEMPLATES):
+            if source == "cv":
                 log.info("detector.event %s from cv: no route, skipped", kind)
             return None
         if data["tier"] != tier:
-            log.info("detector.event %s: cv says %s, routing uses %s", kind, data["tier"], tier)
+            log.info(
+                "detector.event %s: %s says %s, routing uses %s", kind, source, data["tier"], tier
+            )
         cancels = self.routing["cancels"].get(kind, [])
         if cancels:
+            self._engagement_epoch += 1
             self.manager.cancel_queued(cancels)  # DD-04, before any wait
+        if is_engagement and not self._can_engage():
+            return None
         if kind in self._wording or any(a.type == kind for a in self.manager.pending()):
             return None  # one alert per type at a time
         reason = self.manager.blocked(kind, tier)
@@ -110,6 +146,8 @@ class EventRouter:
             return None
         self._wording.add(kind)
         try:
+            if is_engagement:
+                return await self._engage(data)
             signals_in = data.get("signals", {})
             firm = bool(signals_in.get("firm"))  # RR-05: score >= 85
             ctx = {"event_type": kind, "tier": tier, "signals": signals_in, "firm": firm}
@@ -148,4 +186,37 @@ class EventRouter:
                 alert.alert_id,
                 wording.path,
             )
+        return alert
+
+    async def _engage(self, data: dict[str, Any]) -> Alert | None:
+        try:
+            from backend.llm import generate_engagement
+            from backend.llm.engagement import engagement_audio_key
+        except ImportError:
+            log.warning("Engagement dependencies unavailable")
+            return None
+        epoch = self._engagement_epoch
+        item = await generate_engagement(
+            {
+                "engagement": self.engagement,
+                "region": data.get("signals", {}).get("region"),
+                "fallback_index": self._engagement_index,
+            },
+            self.writer.timeout_s,
+        )
+        if item is None or epoch != self._engagement_epoch or not self._can_engage():
+            return None
+        text = item["text"]
+        alert = self.manager.submit(
+            "zoning_out",
+            "T1",
+            text,
+            short_text=text,
+            signals={"event_id": data["event_id"], "score": data["score"]},
+            lang="en",
+            audio_key=engagement_audio_key(text),
+            engagement_answer=item["answer"],
+        )
+        if alert is not None:
+            self._engagement_index += 1
         return alert

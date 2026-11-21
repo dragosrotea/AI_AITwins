@@ -105,6 +105,7 @@ async def test_provider_timeout_plays_keyed_wav_and_routes_english_reply(
     assert provider.await_count == (path == "llm")
 
 
-async def test_legacy_trivia_context_and_summary_stay_english():
+async def test_legacy_trivia_context_and_summary_stay_english(monkeypatch):
+    monkeypatch.setattr(client, "request_text", AsyncMock(return_value=None))
     assert (await generate_engagement({"lang": "ro"}))["text"] == "What is the capital of France?"
     assert await summarize_trip([]) == "Thank you for driving with DriveMate."

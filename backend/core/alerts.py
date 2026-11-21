@@ -77,6 +77,7 @@ class Alert:
     latency_ms: int | None = None
     deadline: float = 0.0
     seq: int = 0  # submission order, for FIFO within a tier
+    engagement_answer: str | None = None
 
 
 def _noop(alert: Alert, reply: dict[str, Any] | None) -> None:
@@ -94,6 +95,7 @@ class AlertManager:
         on_alarm: Hook = _noop,
         on_submit: Callable[[Alert], None] | None = None,
         on_suppress: Callable[[str, str, str], None] | None = None,
+        on_answer: Hook = _noop,
     ) -> None:
         self.cfg = cfg
         self.publish = publish
@@ -103,6 +105,7 @@ class AlertManager:
         self.on_alarm = on_alarm
         self.on_submit = on_submit  # e.g. the trip log, for the trigger signals (AL-04)
         self.on_suppress = on_suppress  # (type, tier, reason) for alerts held back by AL-02
+        self.on_answer = on_answer
         self._last_type: dict[str, float] = {}  # accepted alert times, for the rate limits
         self._last_t1 = -float("inf")
         self._last_noncritical = -float("inf")
@@ -125,6 +128,7 @@ class AlertManager:
         lang: str | None = None,
         audio_key: str | None = None,
         bypass_limits: bool = False,
+        engagement_answer: str | None = None,
     ) -> Alert | None:
         """Queue an alert. Returns None if one of the same type is already queued or active,
         or a rate limit holds it back (AL-02). bypass_limits is for answers to the driver
@@ -143,6 +147,7 @@ class AlertManager:
         if tier == "T1":
             self._last_t1 = now
         alert = Alert(type, tier, text, lang or self.lang, short_text, signals or {}, audio_key)
+        alert.engagement_answer = engagement_answer
         alert.seq = next(self._seq)
         alert.base_tier = tier
         if self.on_submit is not None:
@@ -221,6 +226,8 @@ class AlertManager:
             self.on_follow_up(alert, data)
         elif alert.intent == "HELP":
             self.on_emergency(alert, data)
+        elif alert.intent == "ANSWER" and alert.engagement_answer is not None:
+            self.on_answer(alert, data)
 
     def tick(self) -> None:
         if self._resume is not None:
@@ -263,7 +270,10 @@ class AlertManager:
         log.info("T3 pre-empts %s %s", interrupted.tier, interrupted.type)
         self._resume = None  # a pending repeat of the interrupted alert is dropped
         self.active = None
-        self._enqueue(interrupted)  # back in line; it starts again after the T3
+        if interrupted.type == "zoning_out":
+            self._set_status(interrupted, "closed")
+        else:
+            self._enqueue(interrupted)  # back in line; it starts again after the T3
         self.queue.remove(urgent)  # speak this one, even if the interrupted one sorts first
         self._speak(urgent, first=True)
 
