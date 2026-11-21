@@ -7,14 +7,14 @@ import time
 from pathlib import Path
 from typing import Any
 
-MODEL_NAMES = ("age", "emotion", "drowsiness", "distraction")
+MODEL_NAMES = ("age", "drowsiness", "distraction")
 DEFAULT_MODELS_DIR = Path(__file__).resolve().parents[2] / "models" / "trained"
 IMAGE_SIZE = 224
 RESIZE_SHORT_EDGE = 256
 
 
 class FourModelPipeline:
-    """Run the four trained classifiers on one shared face-camera frame."""
+    """Run the trained age, drowsiness, and distraction classifiers."""
 
     def __init__(
         self,
@@ -84,7 +84,7 @@ class FourModelPipeline:
             }
 
     def predict_frame(self, frame_bgr: Any) -> dict[str, Any]:
-        """Predict age, emotion, drowsiness, and distraction from the same frame."""
+        """Predict age, drowsiness, and distraction from the same frame."""
         cv2 = self._load_cv2()
         rgb_frame = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
         image = self._Image.fromarray(rgb_frame)
@@ -165,7 +165,7 @@ def _run_source(pipeline: FourModelPipeline, source: str | int, display: bool) -
                         2,
                         cv2.LINE_AA,
                     )
-                cv2.imshow("DriveMate four-model pipeline", preview)
+                cv2.imshow("DriveMate visual classifier pipeline", preview)
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     break
             frame_number += 1
