@@ -95,6 +95,37 @@ class CameraCaptureTest(unittest.TestCase):
         self.assertEqual(calls, [(1, float(ord("M"))), (2, 1280.0), (3, 720.0)])
         capture.stop()
 
+    def test_unsupported_capture_format_warns_and_continues(self) -> None:
+        calls: list[int] = []
+
+        class Capture:
+            def set(self, property_id: int, _value: float) -> bool:
+                calls.append(property_id)
+                return property_id != 1
+
+            def isOpened(self) -> bool:
+                return True
+
+            def release(self) -> None:
+                pass
+
+        cv2 = SimpleNamespace(
+            VideoCapture=lambda _index: Capture(),
+            VideoWriter_fourcc=lambda *_chars: 1,
+            CAP_PROP_FOURCC=1,
+            CAP_PROP_FRAME_WIDTH=2,
+            CAP_PROP_FRAME_HEIGHT=3,
+        )
+        capture = CameraCapture()
+
+        with mock.patch.dict("sys.modules", {"cv2": cv2}):
+            with self.assertLogs("cv.camera", level="WARNING") as logs:
+                capture.open()
+
+        self.assertIn("continuing with its default format", logs.output[0])
+        self.assertEqual(calls, [1, 2, 3])
+        capture.stop()
+
     def test_missing_opencv_error_is_actionable(self) -> None:
         capture = CameraCapture()
 

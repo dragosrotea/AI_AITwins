@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from dataclasses import dataclass
 from typing import Protocol
+
+log = logging.getLogger("cv.camera")
 
 
 class CameraFrameProtocol(Protocol):
@@ -78,14 +81,15 @@ class CameraCapture:
         if not capture.isOpened():
             capture.release()
             raise RuntimeError(f"Unable to open webcam index {self.config.index}")
-        if not capture.set(
+        format_selected = capture.set(
             cv2.CAP_PROP_FOURCC,
             float(cv2.VideoWriter_fourcc(*self.config.capture_fourcc)),
-        ):
-            capture.release()
-            raise RuntimeError(
-                f"Webcam {self.config.index} does not accept capture format "
-                f"{self.config.capture_fourcc}; choose a supported camera.capture_fourcc"
+        )
+        if not format_selected:
+            log.warning(
+                "Webcam %s did not accept capture format %s; continuing with its default format",
+                self.config.index,
+                self.config.capture_fourcc,
             )
         capture.set(cv2.CAP_PROP_FRAME_WIDTH, float(self.config.capture_width))
         capture.set(cv2.CAP_PROP_FRAME_HEIGHT, float(self.config.capture_height))
