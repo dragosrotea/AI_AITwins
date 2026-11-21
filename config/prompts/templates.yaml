@@ -1,0 +1,52 @@
+# audio_key is <event_type>_<lang>_<1-based variant index>.
+# Append new variants to keep existing keys stable. Re-render after editing a line.
+distraction:
+  en:
+    - "Let's get back to driving. Can you focus again?"
+    - "You seem distracted. Can you get your focus back?"
+    - "If it's hard to focus, can you pull over somewhere safe?"
+microsleep:
+  en:
+    - "I think you nodded off. Can you pull over safely?"
+    - "You may have fallen asleep for a moment. Can you stop somewhere safe?"
+    - "You need to stop soon. Can you pull over safely now?"
+drowsiness:
+  en:
+    - "Let's take a break. Can you pull over somewhere safe?"
+    - "You seem sleepy. Can you stop somewhere safe to rest?"
+    - "You're getting tired. Can you pull over safely for a rest?"
+phone:
+  en:
+    - "The message can wait. Can you focus on driving again?"
+    - "Can you leave the call until you're safely parked?"
+    - "If it's urgent, can you pull over somewhere safe?"
+no_face:
+  en:
+    - "I can't see your face right now. Are you okay?"
+    - "I've lost sight of you. Can you tell me how you're feeling?"
+    - "I lost sight of you for a moment. Can you hear me?"
+road_rage:
+  en:
+    - "That was stressful. Can you take a slow breath?"
+    - "Let's take a moment. How are you feeling now?"
+    - "If you need a breather, can you pull over somewhere safe?"
+zoning_out:
+  en:
+    - "It's been a long stretch. Can you still concentrate?"
+    - "Are you feeling alert right now?"
+    - "It's easy to drift off on a quiet stretch. How are you feeling?"
+crash_candidate:
+  en:
+    - "The car stopped suddenly. Are you okay?"
+    - "There may have been a collision. Are you safe?"
+    - "Something may have happened. Can you tell me how you're feeling?"
+checkin_due:
+  en:
+    - "Quick check-in. How are you feeling behind the wheel?"
+    - "How's your energy holding up?"
+    - "Are you feeling rested?"
+break_due:
+  en:
+    - "You're due for a break. Can you pull over safely?"
+    - "You've been driving a while. Can you stop somewhere safe for a break?"
+    - "Let's take a break from driving. Can you stop at the next safe place?"

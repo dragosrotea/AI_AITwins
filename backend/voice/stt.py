@@ -7,7 +7,7 @@ from typing import Literal
 import numpy as np
 from faster_whisper import WhisperModel
 
-Language = Literal["ro", "en"]
+Language = Literal["en"]
 
 
 @dataclass(frozen=True)

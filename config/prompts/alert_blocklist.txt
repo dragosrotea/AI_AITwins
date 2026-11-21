@@ -1,0 +1,10 @@
+# One regex per line. Matching is case- and accent-insensitive, with punctuation removed.
+# Looking, reading, or interacting.
+\b(?:look|glance|stare|watch|read|touch|tap|press|click|swipe|scroll|open the app|check (?:your|the) (?:phone|screen|dashboard|mirror|display)|eyes (?:on|off|to|toward)|(?:hold|grab) the wheel|hands on the wheel|turn your head)\b
+\b(?:uita te|uitati va|sa te uiti|sa va uitati|priveste|priviti|sa privesti|citeste|cititi|sa citesti|atinge|atingeti|sa atingi|apasa|apasati|sa apesi|verifica|verificati|ecran|telefon|pune mainile|tine volanul|intoarce capul)\b
+# Blame and insults.
+\b(?:fault|blame|shame on you|you (?:caused|messed up|should have known)|careless|reckless|idiot|stupid|bad driver)\b
+\b(?:vina|vinovat|vinovata|din cauza ta|tu ai provocat|ai gresit|trebuia sa stii|rusine|neatent|neatenta|iresponsabil|iresponsabila|prost|proasta|idiot)\b
+# Encouragement to continue driving. A conservative filter rejects these in any alert.
+\b(?:(?:keep|continue) (?:on )?driving|continue (?:to drive|your (?:trip|journey))|drive (?:on|a little longer)|keep going|push through|power through|you can make it|stay on the road|drive until)\b
+\b(?:continua(?:ti)? (?:sa conduci|sa conduceti|drumul|calatoria)|sa mai conduci|mai condu|mai poti conduce|condu(?:ceti)? (?:mai departe|in continuare)|mergi mai departe|mergeti mai departe|rezista pana|tine te tare)\b

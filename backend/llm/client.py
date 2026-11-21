@@ -14,7 +14,9 @@ PROVIDERS = {
 }
 
 
-async def request_text(prompt: str, timeout_s: float = 2.0) -> str | None:
+async def request_text(
+    prompt: str, timeout_s: float = 2.0, *, system_prompt: str | None = None
+) -> str | None:
     """Return provider text or None; caller cancellation still propagates."""
     try:
         if not math.isfinite(timeout_s) or timeout_s <= 0:
@@ -33,13 +35,16 @@ async def request_text(prompt: str, timeout_s: float = 2.0) -> str | None:
             if not key:
                 return None
 
+            messages = [{"role": "user", "content": prompt}]
+            if system_prompt is not None:
+                messages.insert(0, {"role": "system", "content": system_prompt})
             async with httpx.AsyncClient(timeout=None) as client:
                 response = await client.post(
                     url,
                     headers={"Authorization": f"Bearer {key}"},
                     json={
                         "model": model,
-                        "messages": [{"role": "user", "content": prompt}],
+                        "messages": messages,
                     },
                 )
                 response.raise_for_status()
