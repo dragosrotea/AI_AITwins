@@ -3,4 +3,7 @@
 !trained/
 trained/*
 !trained/emotion.pt
+!trained/age.pt
+!trained/drowsiness.pt
+!trained/distraction.pt
 !trained/training_report.json
