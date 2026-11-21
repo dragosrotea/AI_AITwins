@@ -3,3 +3,6 @@ voice:
   input_device: null
   output_device: null
   ring_buffer_s: 10
+  cabin_baseline_s: 60
+  cabin_shout_db: 15
+  cabin_shout_s: 1.0  # Set to 0.5 for the demo.
