@@ -80,9 +80,12 @@ async def run(
         if fake:
             await run_fake(bus)
         else:
+            from backend.llm.client import reuse_http_client
+
             from .live import run_live
 
-            await run_live(bus, latency_log, end_silence_ms=end_silence_ms)
+            async with reuse_http_client():
+                await run_live(bus, latency_log, end_silence_ms=end_silence_ms)
     finally:
         await bus.close()
 
@@ -93,6 +96,11 @@ def main() -> None:
     parser.add_argument(
         "--capture-diagnostics", action="store_true", help="Print live capture timings to stderr"
     )
+    parser.add_argument(
+        "--reply-diagnostics",
+        action="store_true",
+        help="Print alert reply transcripts and outcomes",
+    )
     parser.add_argument("--latency-log", type=Path, help="Append live timing samples as JSONL")
     parser.add_argument(
         "--end-silence-ms", type=int, help="Override live reply endpoint wait (default: 800 ms)"
@@ -102,9 +110,12 @@ def main() -> None:
         parser.error("--latency-log requires live mode")
     if args.end_silence_ms is not None and (args.fake or args.end_silence_ms <= 0):
         parser.error("--end-silence-ms requires live mode and a positive duration")
-    if args.capture_diagnostics:
+    if args.capture_diagnostics or args.reply_diagnostics:
         logging.basicConfig(format="%(message)s")
+    if args.capture_diagnostics:
         logging.getLogger("backend.voice.capture").setLevel(logging.INFO)
+    if args.reply_diagnostics:
+        logging.getLogger("backend.voice.reply").setLevel(logging.INFO)
 
     try:
         with (

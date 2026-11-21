@@ -1,6 +1,6 @@
 import asyncio
 import json
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import httpx
 import pytest
@@ -117,3 +117,16 @@ async def test_public_deadlines_are_passed_to_client(monkeypatch):
     await generate_alert({"lang": "en"})
     await classify_reply("Synthetic reply", "confirmation")
     assert [call.args[1] for call in request.await_args_list] == [2.0, 1.5]
+
+
+async def test_live_scope_reuses_one_client(provider, monkeypatch):
+    factory = Mock(wraps=client.httpx.AsyncClient)
+    monkeypatch.setattr(client.httpx, "AsyncClient", factory)
+    provider.return_value = completion("OK")
+    async with client.reuse_http_client() as shared:
+        assert await asyncio.create_task(classify_reply("first reply", "confirmation")) == "OK"
+        assert await asyncio.create_task(classify_reply("second reply", "confirmation")) == "OK"
+        assert not shared.is_closed
+    assert shared.is_closed
+    factory.assert_called_once_with(timeout=None)
+    assert provider.await_count == 2

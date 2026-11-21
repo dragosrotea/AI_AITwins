@@ -17,6 +17,7 @@ from backend.audio.devices import FRAME_MS, FRAME_SAMPLES, SAMPLE_RATE, AudioSet
 from backend.audio.features import CabinMonitor
 from backend.audio.profanity import CabinProfanity
 from backend.bus.client import BusClient
+from backend.config import get_config
 from backend.llm.engagement import engagement_clips
 from backend.llm.language import is_english
 from backend.llm.templates import english_fallback, english_templates
@@ -35,6 +36,7 @@ ONSET_SIGNAL_PEAK = 328  # About -40 dBFS peak, matching the capture diagnostics
 ONSET_FRAMES = 3
 log = logging.getLogger(__name__)
 capture_log = logging.getLogger("backend.voice.capture")
+reply_log = logging.getLogger("backend.voice.reply")
 
 
 @cache
@@ -217,6 +219,7 @@ async def interact(
     *,
     end_silence_s: float = END_SILENCE_S,
     engagement: bool = False,
+    reply_timeout_s: float = 1.5,
 ) -> None:
     timing = LatencySample()
     try:
@@ -282,12 +285,16 @@ async def interact(
                 intent = "HELP" if classify_keyword(result.text) == "HELP" else "ANSWER"
                 classification = ReplyClassification(intent, "keyword")
             else:
-                classification = await classify_confirmation(result.text)
+                classification = await classify_confirmation(
+                    result.text, question=alert.text, timeout_s=reply_timeout_s
+                )
             classified_at = perf_counter()
             timing.classification_ms = elapsed_ms(classify_started_at, classified_at)
             timing.speech_to_intent_ms = elapsed_ms(speech_end, classified_at)
             timing.path = classification.path
-            if classification.fallback_failed:
+            if classification.timed_out:
+                timing.outcome = "provider_timeout"
+            elif classification.fallback_failed:
                 timing.outcome = "provider_failure"
             elif not result.text.strip():
                 timing.outcome = "no_transcript"
@@ -303,6 +310,15 @@ async def interact(
                 path=classification.path,
             )
         await bus.publish("voice.reply", reply.model_dump())
+        if reply_log.level == logging.INFO:
+            reply_log.info(
+                "alert_id=%s transcript=%r intent=%s path=%s outcome=%s",
+                alert.alert_id,
+                reply.transcript,
+                reply.intent,
+                reply.path,
+                timing.outcome,
+            )
     except asyncio.CancelledError:
         timing.outcome = "interrupted"
         raise
@@ -322,6 +338,7 @@ async def run_live(
     bus: BusClient, latency_log: TextIO | None = None, *, end_silence_ms: int | None = None
 ) -> None:
     settings = AudioSettings.load()
+    reply_timeout_s = get_config()["voice"]["reply_timeout_s"]
     end_silence_s = END_SILENCE_S if end_silence_ms is None else end_silence_ms / 1000
     stt = await asyncio.to_thread(SpeechToText, offline=True)
     ready = asyncio.Event()
@@ -384,6 +401,7 @@ async def run_live(
                         latency_log,
                         end_silence_s=end_silence_s,
                         engagement=engagement,
+                        reply_timeout_s=reply_timeout_s,
                     )
                 )
                 await asyncio.gather(active, return_exceptions=True)

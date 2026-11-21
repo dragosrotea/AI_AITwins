@@ -26,7 +26,9 @@ async def probe(mode: str, *, tts: bool = False, short_reply: str | None = None)
         print("Simulated provider timeout. Publishing the English local fallback.")
 
     text, key = english_fallback("drowsiness")
-    reply_text = short_reply or ("I feel all right" if mode == "llm" else "Yes, I'm okay")
+    reply_text = short_reply or (
+        "There's a rest area coming up. I'll stop there" if mode == "llm" else "Yes, I can"
+    )
     expected_path = "llm" if mode == "llm" else "keyword"
     expected_intent = "NONE" if mode == "silence" else "NOT_OK" if short_reply == "No" else "OK"
     alert_id = f"en-smoke-{uuid4().hex[:8]}"

@@ -52,6 +52,8 @@ async def _request(
     timeout_s: float,
     limit_s: float,
     validate: Callable[[str], T | None],
+    *,
+    raise_timeout: bool = False,
 ) -> T | None:
     try:
         if not isfinite(timeout_s) or timeout_s <= 0:
@@ -63,6 +65,10 @@ async def _request(
                 json.dumps(payload, ensure_ascii=False), budget, system_prompt=prompt
             )
             return await asyncio.to_thread(validate, output.strip()) if output else None
+    except TimeoutError:
+        if raise_timeout:
+            raise
+        return None
     except Exception:  # noqa: BLE001 - caller supplies the fallback
         return None
 
@@ -80,12 +86,22 @@ def validate_english_alert(output: str) -> str | None:
 
 
 async def classify_reply(transcript: str, expecting: str, timeout_s: float = 1.5) -> str | None:
+    result, _timed_out = await classify_reply_with_status(transcript, expecting, timeout_s)
+    return result
+
+
+async def classify_reply_with_status(
+    transcript: str, expecting: str, timeout_s: float, *, question: str = ""
+) -> tuple[str | None, bool]:
     if not isinstance(transcript, str) or not transcript.strip():
-        return None
-    return await _request(
-        "classify_reply",
-        {"transcript": transcript, "expecting": expecting},
-        timeout_s,
-        1.5,
-        validate_intent,
-    )
+        return None, False
+    payload = {"transcript": transcript, "expecting": expecting}
+    if question:
+        payload["question"] = question
+    try:
+        result = await _request(
+            "classify_reply", payload, timeout_s, 2.5, validate_intent, raise_timeout=True
+        )
+        return result, False
+    except TimeoutError:
+        return None, True

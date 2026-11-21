@@ -130,7 +130,8 @@ def test_legacy_romanian_key_loads_matching_english_wav():
 
 
 @pytest.mark.parametrize(
-    ("transcript", "path"), [("Yes, I'm okay.", "keyword"), ("I feel all right.", "llm")]
+    ("transcript", "path"),
+    [("Yes, I can.", "keyword"), ("There's a rest area coming up. I'll stop there.", "llm")],
 )
 async def test_provider_timeout_plays_keyed_wav_and_routes_english_reply(
     monkeypatch, transcript, path
