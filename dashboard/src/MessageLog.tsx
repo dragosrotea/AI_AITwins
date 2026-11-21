@@ -90,6 +90,32 @@ function formatTs(ts: number) {
   return new Date(ts * 1000).toLocaleTimeString()
 }
 
+function PayloadPreview({ topic, message }: { topic: Topic; message: Envelope }) {
+  if (topic === 'music.volume') {
+    const volume = message.data.volume
+    const playing = message.data.playing
+    if (typeof volume === 'number' && typeof playing === 'boolean') {
+      const clampedVolume = Math.max(0, Math.min(100, volume))
+      return (
+        <div className="music-volume-payload" aria-label={`Music volume ${volume} percent, ${playing ? 'playing' : 'paused'}`}>
+          <span className="music-volume-symbol" aria-hidden="true">♫</span>
+          <strong className="music-volume-value">{Math.round(volume)}%</strong>
+          <span className="music-volume-label">VOLUME</span>
+          <span className={`music-playback-state${playing ? ' music-playback-state--playing' : ''}`}>
+            <span className="music-playback-dot" />
+            {playing ? 'Playing' : 'Paused'}
+          </span>
+          <span className="music-volume-meter" aria-hidden="true">
+            <span style={{ width: `${clampedVolume}%` }} />
+          </span>
+        </div>
+      )
+    }
+  }
+
+  return <pre className="payload-preview">{JSON.stringify(compactPayload(message.data), null, 2)}</pre>
+}
+
 export default function MessageLog() {
   const messages = useLatestMessages()
   const { rates, available } = useTopicRates()
@@ -110,6 +136,12 @@ export default function MessageLog() {
 
       <div className="message-table-wrap">
         <table className="message-table">
+          <colgroup>
+            <col className="message-col-topic" />
+            <col className="message-col-rate" />
+            <col className="message-col-time" />
+            <col className="message-col-payload" />
+          </colgroup>
           <thead>
             <tr>
               <th scope="col">Topic</th>
@@ -125,13 +157,20 @@ export default function MessageLog() {
               return (
                 <tr key={topic}>
                   <th className="topic-name" scope="row">{topic}</th>
-                  <td className="rate-cell">{(rate?.rate_hz ?? 0).toFixed(2)} <span>Hz</span></td>
-                  <td className="timestamp-cell">{message ? formatTs(message.ts) : 'Waiting'}</td>
-                  <td>
+                  <td className="rate-cell">
+                    <span className="rate-value">{(rate?.rate_hz ?? 0).toFixed(2)}</span>
+                    <span className="rate-unit">Hz</span>
+                  </td>
+                  <td className="timestamp-cell">
                     {message ? (
-                      <pre className="payload-preview">{JSON.stringify(compactPayload(message.data), null, 2)}</pre>
+                      <time dateTime={new Date(message.ts * 1000).toISOString()}>{formatTs(message.ts)}</time>
                     ) : (
-                      <span className="waiting-payload">No message received yet</span>
+                      <span className="waiting-cell">Waiting</span>
+                    )}
+                  </td>
+                  <td>
+                    {message ? <PayloadPreview topic={topic} message={message} /> : (
+                      <span className="waiting-payload"><span className="waiting-payload-dot" />No message received yet</span>
                     )}
                   </td>
                 </tr>

@@ -2,6 +2,7 @@ import { useEffect, useState, type MouseEvent } from 'react'
 import { bus, type BusStatus } from './bus'
 import MessageLog from './MessageLog'
 import MusicPlayer from './MusicPlayer'
+import { AccelerationChart, CabinChart, DebugCorner, DriverCameraPanel } from './TelemetryPanels'
 
 type RoutePath = '/driver' | '/copilot' | '/debug'
 
@@ -68,14 +69,15 @@ function CopilotLayout() {
         </div>
       </div>
       <div className="copilot-panels">
-        <PanelPlaceholder title="DRIVER STATE & CAMERA" className="copilot-driver-panel" />
-        <PanelPlaceholder title="VEHICLE MOTION" className="copilot-motion-panel" />
+        <DriverCameraPanel />
+        <AccelerationChart />
         <PanelPlaceholder title="CONVERSATION" className="copilot-conversation-panel" />
         <PanelPlaceholder title="EVENT TIMELINE" className="copilot-timeline-panel" />
-        <PanelPlaceholder title="CABIN AUDIO & HEART RATE" className="copilot-signals-panel" />
+        <CabinChart />
         <MusicPlayer />
         <PanelPlaceholder title="TRIP & ROAD CONTEXT" className="copilot-context-panel" />
       </div>
+      <DebugCorner />
     </section>
   )
 }
@@ -109,7 +111,9 @@ export default function App() {
   return (
     <div className={`shell app-shell${route === '/driver' ? ' app-shell--driver' : ''}`}>
       <header className="topbar">
-        <div className="brand-mark" aria-hidden="true">D</div>
+        <div className="brand-mark" aria-hidden="true">
+          <img src="/brand/drivemate-mark.png" alt="" />
+        </div>
         <div className="brand-copy">
           <p className="eyebrow">DRIVER SAFETY COPILOT</p>
           <h1>DriveMate</h1>
