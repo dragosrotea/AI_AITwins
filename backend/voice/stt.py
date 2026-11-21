@@ -1,5 +1,6 @@
 """In-memory speech-to-text for 16 kHz mono microphone PCM."""
 
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from time import perf_counter
 from typing import Literal
@@ -8,6 +9,36 @@ import numpy as np
 from faster_whisper import WhisperModel
 
 Language = Literal["en"]
+
+
+class SpeechExecutor(ThreadPoolExecutor):
+    """Single Whisper worker. Background work may start only from an empty queue."""
+
+    def __init__(self) -> None:
+        super().__init__(max_workers=1)
+        self._pending: set[Future] = set()
+        self._background: Future | None = None
+
+    def submit(self, fn, /, *args, **kwargs):
+        # Submissions happen on the event loop. A running future stays pending
+        # even if the coroutine awaiting it has been cancelled.
+        self.cancel_queued_background()
+        self._pending = {future for future in self._pending if not future.done()}
+        future = super().submit(fn, *args, **kwargs)
+        self._pending.add(future)
+        return future
+
+    def submit_if_idle(self, fn, /, *args):
+        if any(not future.done() for future in self._pending):
+            return None
+        future = self.submit(fn, *args)
+        self._background = future
+        return future
+
+    def cancel_queued_background(self) -> None:
+        if self._background is not None:
+            self._background.cancel()
+            self._background = None
 
 
 @dataclass(frozen=True)

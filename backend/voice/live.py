@@ -15,6 +15,7 @@ from webrtcvad import Vad
 
 from backend.audio.devices import FRAME_MS, FRAME_SAMPLES, SAMPLE_RATE, AudioSettings, Microphone
 from backend.audio.features import CabinMonitor
+from backend.audio.profanity import CabinProfanity
 from backend.bus.client import BusClient
 from backend.llm.language import is_english
 from backend.llm.templates import english_fallback, english_templates
@@ -22,7 +23,7 @@ from backend.schemas import VoiceReply, VoiceSay, VoiceState, VoiceStatus
 
 from .intents import classify_confirmation
 from .latency import LatencySample, elapsed_ms
-from .stt import SpeechToText
+from .stt import SpeechExecutor, SpeechToText
 from .tts import DEMO_LINES, play_interruptible, synthesize
 
 ASSETS = Path(__file__).resolve().parents[2] / "assets" / "audio"
@@ -327,19 +328,21 @@ async def run_live(
         if busy and alert.tier != "T3":
             return
         pending = alert
+        profanity.pause()
         if active is not None and not active.done() and not active.cancelling():
             active.cancel()
         ready.set()
 
     # CTranslate2 inference already in progress cannot be cancelled. Keep one
     # inference worker, while allowing the replacement alert to speak promptly.
-    with Microphone(settings) as mic, ThreadPoolExecutor(max_workers=1) as inference:
+    with Microphone(settings) as mic, SpeechExecutor() as inference:
         if capture_log.isEnabledFor(logging.INFO):
             index, name = mic.describe_input()
             capture_log.info(
                 "Capture input device=%d name=%s configured=%s", index, name, settings.input_device
             )
-        monitor = CabinMonitor(mic, settings)
+        profanity = CabinProfanity(stt, inference)
+        monitor = CabinMonitor(mic, settings, profanity)
         bus.subscribe(["voice.say"], on_say)
         await bus.connect()
         async with asyncio.TaskGroup() as tasks:
@@ -363,3 +366,5 @@ async def run_live(
                     )
                 )
                 await asyncio.gather(active, return_exceptions=True)
+                if pending is None:
+                    profanity.resume()
