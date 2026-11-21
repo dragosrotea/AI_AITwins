@@ -138,6 +138,8 @@ cv:
   microsleep_s: 1.0                # DD-02
   perclos_threshold: 0.15          # DD-03
   yawn_count: 3                    # DD-03
+  visual_events:
+    cooldown_s: 30                 # CV-T10: suppress rapid repeat episodes of the same type
   anger_threshold: 0.6             # RR-01
   anger_hold_s: 3                  # RR-01
   phone_hold_s: 1.5                # PH-02

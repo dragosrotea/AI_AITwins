@@ -26,6 +26,7 @@ from backend.cv.settings import (
     resolved_path,
     string_setting,
 )
+from backend.cv.visual_events import DriverStateMetrics, VisualEventDetector
 from backend.schemas import validate
 
 log = logging.getLogger("cv")
@@ -190,6 +191,7 @@ def run_fake(
     preview_rate_hz: float,
     preview_width: int,
     jpeg_quality: int,
+    settings: dict[str, Any] | None = None,
 ) -> None:
     if not math.isfinite(state_rate_hz) or state_rate_hz <= 0:
         raise ValueError("state_rate_hz must be positive")
@@ -199,6 +201,7 @@ def run_fake(
     publisher = CVPublisher(broker_url)
     publisher.start()
     generator = fake_sequences(sequence)
+    event_detector = VisualEventDetector(settings or load_cv_settings())
     running = True
 
     def stop(_signum: int, _frame: object) -> None:
@@ -214,8 +217,11 @@ def run_fake(
         while running:
             state = next(generator)
             data = validate("driver.state", state_dict(state)).model_dump(mode="json")
-            publisher.publish("driver.state", data)
             now = time.monotonic()
+            for event in event_detector.update(data, now):
+                validated_event = validate("detector.event", event).model_dump(mode="json")
+                publisher.publish("detector.event", validated_event)
+            publisher.publish("driver.state", data)
             if now >= next_preview:
                 publisher.publish("camera.frame", preview)
                 next_preview = now + 1.0 / preview_rate_hz
@@ -356,6 +362,8 @@ def run_live(
     if input_size != 64:
         raise ValueError("Eye-state model input_size must be 64")
     blink_detector = BlinkDetector(closed_ear, open_ear)
+    state_metrics = DriverStateMetrics(settings)
+    event_detector = VisualEventDetector(settings)
     state_rate_hz = float_setting(settings, "publisher", "state_rate_hz")
     preview_rate_hz = float_setting(settings, "preview", "rate_hz")
     preview_width = integer_setting(settings, "preview", "width", minimum=1)
@@ -400,6 +408,10 @@ def run_live(
 
             result = landmarker.process(frame)
             data = _driver_data(frame, result, settings, eye_model, blink_detector, fps)
+            data = state_metrics.update(data, now)
+            for event in event_detector.update(data, now):
+                validated_event = validate("detector.event", event).model_dump(mode="json")
+                publisher.publish("detector.event", validated_event)
             if now >= next_state_publish:
                 validated = validate("driver.state", data).model_dump(mode="json")
                 publisher.publish("driver.state", validated)
@@ -491,6 +503,7 @@ def main() -> int:
             preview_rate_hz=float_setting(settings, "preview", "rate_hz"),
             preview_width=integer_setting(settings, "preview", "width", minimum=1),
             jpeg_quality=integer_setting(settings, "preview", "jpeg_quality", minimum=1),
+            settings=settings,
         )
         return 0
     run_live(settings, broker_url, args.camera)
