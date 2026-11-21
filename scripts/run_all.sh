@@ -6,6 +6,8 @@
 #   scripts/run_all.sh --fake=cv,hr     # only these on synthetic data
 #
 # A process whose module does not exist yet is skipped with a warning, so main always runs.
+# Every process is restarted when it exits (NF-06, LEAD-T25): after 2 s, backing off to 30 s
+# while it keeps failing within a few seconds of starting. The bus clients reconnect by themselves.
 # Env: PYTHON (default .venv/bin/python, else python3), DRIVEMATE_PROFILE, DRIVEMATE_BUS_URL.
 set -u
 cd "$(dirname "$0")/.."
@@ -23,10 +25,18 @@ for arg in "$@"; do
   esac
 done
 
+# kill_tree PID: stop a process and everything it started (restart loops run python in a subshell).
+kill_tree() {
+  local child
+  for child in $(pgrep -P "$1" 2>/dev/null); do kill_tree "$child"; done
+  kill -TERM "$1" 2>/dev/null
+}
+
 cleanup() {
   trap - INT TERM EXIT
   echo "[run_all] stopping"
-  pkill -TERM -P $$ 2>/dev/null  # every pipeline member is a direct child of this shell
+  local child
+  for child in $(pgrep -P $$ 2>/dev/null); do kill_tree "$child"; done
   wait 2>/dev/null
 }
 trap cleanup INT TERM EXIT
@@ -43,7 +53,21 @@ start() {
   fi
   if [ -n "$flag" ] && is_fake "$name"; then args=("$flag"); fi
   echo "[run_all] start $name: $PYTHON -m $module ${args[*]-}"
-  "$PYTHON" -u -m "$module" ${args[@]+"${args[@]}"} 2>&1 | sed -u "s/^/[$name] /" &
+  (
+    trap 'exit 0' TERM
+    delay=2
+    while true; do
+      started=$SECONDS
+      "$PYTHON" -u -m "$module" ${args[@]+"${args[@]}"} 2>&1 | sed -u "s/^/[$name] /"
+      if [ $((SECONDS - started)) -lt 5 ]; then
+        delay=$((delay * 2 > 30 ? 30 : delay * 2))  # failing at start: back off
+      else
+        delay=2
+      fi
+      echo "[run_all] $name exited; restarting in ${delay} s"
+      sleep "$delay"
+    done
+  ) &
 }
 
 start broker backend.bus.broker ""
