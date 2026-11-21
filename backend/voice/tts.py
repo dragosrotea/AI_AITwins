@@ -1,8 +1,13 @@
 """Speech synthesis and playback through DriveMate's configured output."""
 
 import asyncio
+import logging
+import sys
 from dataclasses import dataclass
-from threading import Event
+from locale import windows_locale
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from threading import Event, Lock
 from time import perf_counter
 from typing import Any
 
@@ -19,6 +24,9 @@ DEMO_LINES = {
 }
 QUIET_PEAK = 32  # Approximately -60 dBFS for signed int16.
 SPEECH_TAIL_MS = 40
+LIVE_EDGE_TIMEOUT_S = 2.0
+_system_voice_lock = Lock()
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -29,8 +37,8 @@ class PlaybackTiming:
     output_name: str | None = None
 
 
-async def synthesize(text: str, lang: str) -> bytes:
-    """Return the Edge MP3 in memory. Only synthesis uses the network."""
+async def synthesize_edge(text: str, lang: str) -> bytes:
+    """Return the Edge MP3 in memory, allowing longer requests for asset rendering."""
     import edge_tts
 
     audio = bytearray()
@@ -41,6 +49,87 @@ async def synthesize(text: str, lang: str) -> bytes:
     if not audio:
         raise ValueError("Edge TTS returned no audio")
     return bytes(audio)
+
+
+def _require_audio(audio: bytes) -> bytes:
+    decoded = miniaudio.decode(audio)
+    if not decoded.num_frames or not any(abs(sample) > QUIET_PEAK for sample in decoded.samples):
+        raise ValueError("Speech synthesis returned no audible samples")
+    return audio
+
+
+def _is_english_voice(languages: list[str | bytes]) -> bool:
+    for language in languages:
+        if isinstance(language, bytes):
+            language = language.decode("ascii", errors="ignore")
+        language = language.lstrip("\x02\x05").replace("_", "-").lower()
+        if language == "en" or language.startswith("en-"):
+            return True
+        if sys.platform == "win32":
+            # Older SAPI drivers expose hexadecimal locale IDs rather than language tags.
+            try:
+                if windows_locale.get(int(language.split(";")[0], 16), "").startswith("en_"):
+                    return True
+            except ValueError:
+                continue
+    return False
+
+
+def _render_system_voice(text: str) -> bytes:
+    from pyttsx3.engine import Engine
+
+    # A fresh engine keeps Windows COM objects on the worker that created them.
+    engine = Engine()
+    voice = next((v for v in engine.getProperty("voices") if _is_english_voice(v.languages)), None)
+    if voice is None:
+        raise RuntimeError("No English system voice installed")
+    engine.setProperty("voice", voice.id)
+    with TemporaryDirectory(prefix="drivemate-tts-") as directory:
+        path = Path(directory) / "speech.wav"
+        engine.save_to_file(text, str(path))
+        engine.runAndWait()
+        return _require_audio(path.read_bytes())
+
+
+def _synthesize_system(text: str, cancelled: Event) -> bytes:
+    # Serialize access to the system speech driver across cancelled and replacement requests.
+    with _system_voice_lock:
+        if cancelled.is_set():
+            return b""
+        if sys.platform != "win32":
+            return _render_system_voice(text)
+
+        import pythoncom
+
+        pythoncom.CoInitialize()
+        try:
+            return _render_system_voice(text)
+        finally:
+            pythoncom.CoUninitialize()
+
+
+async def synthesize(text: str, lang: str) -> bytes:
+    """Render live English speech with Edge first and an installed system voice second."""
+    try:
+        async with asyncio.timeout(LIVE_EDGE_TIMEOUT_S):
+            audio = await synthesize_edge(text, lang)
+            return await asyncio.to_thread(_require_audio, audio)
+    except Exception as error:  # noqa: BLE001 - Edge failures have one offline fallback
+        log.info("Edge TTS unavailable (%s), trying the English system voice", type(error).__name__)
+
+    if lang != "en":
+        raise ValueError("System speech is English only")
+    cancelled = Event()
+    try:
+        audio = await asyncio.to_thread(_synthesize_system, text, cancelled)
+    except asyncio.CancelledError:
+        # The driver can finish rendering, but no result can reach playback after cancellation.
+        cancelled.set()
+        raise
+    except Exception as error:  # noqa: BLE001 - missing or broken system speech must stay local
+        raise RuntimeError("English system speech unavailable") from error
+    log.info("Using English system speech for playback")
+    return audio
 
 
 def play(

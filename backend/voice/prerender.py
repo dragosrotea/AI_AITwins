@@ -17,7 +17,7 @@ import miniaudio
 from backend.llm.engagement import engagement_clips
 from backend.llm.templates import CATALOG, english_templates
 
-from .tts import DEMO_LINES, synthesize
+from .tts import DEMO_LINES, synthesize_edge
 
 ROOT = Path(__file__).resolve().parents[2]
 ASSETS = ROOT / "assets" / "audio"
@@ -86,11 +86,11 @@ async def synthesize_template(name: str, text: str, lang: str) -> bytes:
 
     for delay in (1, 2):
         try:
-            return await synthesize(text, lang)
+            return await synthesize_edge(text, lang)
         except (NoAudioReceived, TimeoutError) as error:
             print(f"{name}: {type(error).__name__}. Retrying in {delay} s.", flush=True)
             await asyncio.sleep(delay)
-    return await synthesize(text, lang)
+    return await synthesize_edge(text, lang)
 
 
 def main() -> None:
