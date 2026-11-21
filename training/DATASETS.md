@@ -1,6 +1,6 @@
 # DriveMate dataset inventory
 
-Use `data/download_datasets.sh` to prepare datasets. Store all downloaded files under `data/raw/`; those files are excluded from git. Before a training run, inspect the downloaded folder structure and a few filenames because layouts vary.
+Store local dataset copies under `data/raw/`; those files are excluded from git. Before a training run, inspect the downloaded folder structure and a few filenames because layouts vary.
 
 | Purpose | Source | Licence or terms | Approximate size | Download method |
 |---|---|---|---:|---|
@@ -38,3 +38,51 @@ Inspect these directories after download:
 find data/raw -maxdepth 2 -type f | sort | head -20
 find data/raw -mindepth 1 -maxdepth 1 -type d | sort
 ```
+
+## Training the four-model pipeline
+
+The current local folders are `age_detection`, `emotion_detection`, and `dmd`.
+Install the requirements in `training/requirements.txt`, then run:
+
+```bash
+python3 -m pip install -r training/requirements.txt
+python3 -m training.train_models
+```
+
+The trainer uses pretrained MobileNetV3-Small weights by default. It trains age
+and emotion classifiers from their provided `train/` and `test/` image folders.
+Age outputs the provided five age bands; emotion outputs the seven directory
+labels. It extracts every annotated frame from each DMD annotation's
+`face_camera` stream only, resizes those frames to 224x224, and trains:
+
+- Drowsiness as independent multi-label probabilities for each `eyes_state/`,
+  `yawning/`, and `blinks/` annotation.
+- Distraction as independent multi-label probabilities for each
+  `driver_actions/` annotation.
+
+The DMD validation split is chronological per recording to avoid placing
+neighboring frames in both splits. The supplied DMD subset has very few
+recordings, so this is not subject-independent validation and should not be
+treated as a generalization estimate.
+
+The current age folder has 150 images total (125 train, 25 test), and the
+current DMD folder has one drowsiness recording and three distraction
+recordings. Age and DMD metrics from these files are exploratory only and are
+not sufficient evidence of reliable driver-safety performance.
+
+By default, extracted frame cache is written to `data/cache/dmd/`, model bundles
+and `training_report.json` to `models/trained/`. Both locations are excluded
+from version control. Adjust training cost with `--epochs`, `--batch-size`,
+`--workers`, and `--device`; the DMD frame step is every frame.
+
+Run all four saved models on one webcam or face-camera video. The same incoming
+frame is resized and passed through all four models:
+
+```bash
+python3 -m backend.cv.model_pipeline --camera 0
+python3 -m backend.cv.model_pipeline --video path/to/face_camera.mp4
+```
+
+The pipeline emits newline-delimited JSON predictions to stdout. DMD models
+were trained only on face-camera streams; do not substitute DMD hands, body, or
+mosaic videos.
