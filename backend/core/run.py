@@ -30,6 +30,7 @@ from backend.bus.client import BusClient
 from backend.config import get_config
 from backend.core.alerts import Alert, AlertManager
 from backend.core.events import TEMPLATES, EventRouter
+from backend.core.fusion import RageFusion
 from backend.core.triplog import TripLog
 from backend.core.vehicle import Injector, Player, load_trips
 from backend.core.wording import AlertWriter
@@ -279,6 +280,29 @@ def attach_alerts(
     return manager
 
 
+def attach_fusion(bus: BusClient, cfg: dict[str, Any], triplog: TripLog) -> RageFusion:
+    """Road-rage fusion (LEAD-T17). Core feeds it its own vehicle.motion samples directly."""
+
+    def emit(data: dict[str, Any]) -> None:
+        validate("detector.event", data)
+        bus.publish_nowait("detector.event", data)
+
+    def suppressed(data: dict[str, Any], reason: str) -> None:
+        triplog.note("rage_suppressed", {**data, "reason": reason})  # RR-07: logged, not spoken
+
+    fusion = RageFusion(cfg["core"]["rage"], cfg["core"]["hr"], emit, suppressed)
+    inputs = {
+        "driver.state": fusion.on_driver_state,
+        "audio.features": fusion.on_audio,
+        "bio.hr": fusion.on_hr,
+        "music.volume": fusion.on_music,
+    }
+    for topic, handler in inputs.items():
+        bus.subscribe([topic], checked(topic, lambda d, h=handler: h(d, time.monotonic())))
+    bus.subscribe(["control.trip"], checked("control.trip", fusion.on_trip))
+    return fusion
+
+
 async def tick_loop(manager: AlertManager, period_s: float = 0.1) -> None:
     while True:
         manager.tick()
@@ -287,7 +311,9 @@ async def tick_loop(manager: AlertManager, period_s: float = 0.1) -> None:
 
 async def run_live(bus: BusClient, cfg: dict[str, Any]) -> None:
     vehicle = cfg["core"]["vehicle"]
-    alerts = attach_alerts(bus, cfg, attach_triplog(bus, cfg))
+    triplog = attach_triplog(bus, cfg)
+    alerts = attach_alerts(bus, cfg, triplog)
+    fusion = attach_fusion(bus, cfg, triplog)
     injector = attach_injector(bus, cfg)
     trips = load_trips(vehicle)
     if trips:
@@ -295,14 +321,18 @@ async def run_live(bus: BusClient, cfg: dict[str, Any]) -> None:
         bus.subscribe(["control.replay"], checked("control.replay", player.control))
 
         def next_sample() -> dict[str, Any]:
-            return injector.apply(player.step())
+            sample = injector.apply(player.step())
+            fusion.on_vehicle(sample, time.monotonic())
+            return sample
     else:
         log.warning("no UAH-DriveSet trips found; publishing the synthetic drive (source sim)")
         started = time.monotonic()
         speed = cfg["core"]["fake"]["speed_kmh"]
 
         def next_sample() -> dict[str, Any]:
-            return injector.apply(vehicle_sample(time.monotonic() - started, speed))
+            sample = injector.apply(vehicle_sample(time.monotonic() - started, speed))
+            fusion.on_vehicle(sample, time.monotonic())
+            return sample
 
     await bus.connect()
     log.info("core live connected to %s", bus.url)

@@ -47,6 +47,15 @@ core:
     max_per_window: 3              # RR-07
     max_window_s: 1800             # RR-07
     weights: {face: 0.4, voice: 0.35, driving: 0.25}
+    face_threshold: 0.6            # RR-01: anger_p counts as angry from here
+    face_hold_s: 3                 # RR-01: sustained this long, the face modality agrees
+    voice_window_s: 10             # a shout or swear keeps the voice modality agreeing this long
+    swears_full: 3                 # swears in 60 s that give the full voice component
+    hr_bonus: 10                   # SW-03 stress cue adds this many points
+    music_bonus: 5                 # music turned up by music_rise within music_window_s
+    music_rise: 20
+    music_window_s: 30
+    resting_hr: 70                 # until the pre-trip form gives the driver's own (CI-01)
   zoning:
     threshold: 0.6
     monotony_speed_kmh: 70         # ZO-01
