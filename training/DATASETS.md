@@ -79,11 +79,24 @@ python3 -m pip install -r training/requirements.txt
 python3 -m training.train_models
 ```
 
-The trainer uses pretrained MobileNetV3-Small weights by default. It trains age
-and emotion classifiers from their provided `train/` and `test/` image folders.
-Age outputs the provided five age bands; emotion outputs the seven directory
-labels. It extracts every annotated frame from each DMD annotation's
-`face_camera` stream only, resizes those frames to 224x224, and trains:
+The trainer uses pretrained MobileNetV3-Large weights, first fitting the
+classifier head with a frozen backbone and then fine-tuning the backbone at a
+lower learning rate. Mild crop, rotation, flip, and lighting augmentation are
+applied only to training data. It tracks validation macro precision, recall,
+and F1 per class using a stratified holdout split from `train/`; the supplied
+`test/` folder is used only for the final report. The public image folders do
+not identify people, so these metrics are not person-independent. The trainer
+saves the best validation macro-F1 checkpoint, reduces the learning rate when
+validation F1 plateaus, and stops early when the score stops improving.
+Use `--tasks emotion` (or any subset of the four tasks) to train without
+overwriting unrelated models. Use `--init-from-dir models/trained` to fine-tune
+the current bundle; the trainer checks task, class, and tensor compatibility,
+and retains the starting checkpoint unless validation macro-F1 improves. Age
+and emotion use their provided `train/` and
+`test/` image folders. Age outputs the provided five age bands; emotion outputs
+the seven directory labels. It extracts every annotated frame from each DMD
+annotation's `face_camera` stream only, resizes those frames to 224x224, and
+trains:
 
 - Drowsiness as independent multi-label probabilities for each `eyes_state/`,
   `yawning/`, and `blinks/` annotation.

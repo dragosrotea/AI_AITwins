@@ -170,6 +170,7 @@ def _run_source(pipeline: FourModelPipeline, source: str | int, display: bool) -
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     break
             frame_number += 1
+            # time.sleep(2)  
     finally:
         capture.release()
         if display:
