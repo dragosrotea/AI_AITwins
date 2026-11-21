@@ -1,0 +1,64 @@
+import unittest
+
+from backend.cv.camera import CameraConfig, LatestFrame, CameraCapture
+from backend.cv.face_landmarks import FaceLandmarker, LandmarkResult
+from backend.cv.run import fake_sequences, state_dict
+
+
+class LatestFrameTest(unittest.TestCase):
+    def test_replaces_previous_frame(self) -> None:
+        buffer = LatestFrame()
+        buffer.put("first", timestamp=1.0)
+        buffer.put("second", timestamp=2.0)
+
+        frame, timestamp = buffer.get()
+
+        self.assertEqual(frame, "second")
+        self.assertEqual(timestamp, 2.0)
+
+
+class CameraConfigTest(unittest.TestCase):
+    def test_cv_t02_defaults(self) -> None:
+        config = CameraConfig()
+
+        self.assertEqual(config.index, 0)
+        self.assertEqual((config.capture_width, config.capture_height), (1280, 720))
+        self.assertEqual((config.process_width, config.process_height), (640, 360))
+
+
+class FaceLandmarkerTest(unittest.TestCase):
+    def test_missing_model_is_actionable(self) -> None:
+        landmarker = FaceLandmarker("models/does-not-exist.task")
+
+        with self.assertRaisesRegex(RuntimeError, "download_datasets.sh mediapipe"):
+            landmarker.open()
+
+
+class FakePublisherTest(unittest.TestCase):
+    def test_fake_state_has_shared_contract_fields(self) -> None:
+        state = next(fake_sequences("normal"))
+        data = state_dict(state)
+
+        expected = {
+            "face_present", "eye_closed_p", "eyes_closed_ms", "perclos_60s",
+            "blink_rate_pm", "gaze_dispersion_30s", "head", "yawn_p",
+            "yawns_10m", "anger_p", "zoning_visual_p", "phone_in_hand", "fps",
+        }
+        self.assertEqual(set(data), expected)
+
+    def test_fake_sequences_include_requested_modes(self) -> None:
+        for sequence in ("normal", "eyes_closing", "looking_down", "angry", "staring"):
+            state = next(fake_sequences(sequence))
+            self.assertIn(state.face_present, (True, False))
+
+
+class CameraCaptureTest(unittest.TestCase):
+    def test_missing_opencv_error_is_actionable(self) -> None:
+        capture = CameraCapture()
+
+        with self.assertRaisesRegex(RuntimeError, "Install opencv-python"):
+            capture.open()
+
+
+if __name__ == "__main__":
+    unittest.main()
