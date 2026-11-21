@@ -2,6 +2,7 @@
 
 from collections import deque
 from dataclasses import dataclass, field
+from math import isfinite
 from pathlib import Path
 from threading import Lock
 from time import perf_counter
@@ -21,6 +22,9 @@ class AudioSettings:
     input_device: int | None
     output_device: int | None
     ring_buffer_s: int
+    cabin_baseline_s: float = 60.0
+    cabin_shout_db: float = 15.0
+    cabin_shout_s: float = 1.0
 
     @classmethod
     def load(cls, path: Path = CONFIG_PATH) -> "AudioSettings":
@@ -33,7 +37,23 @@ class AudioSettings:
         duration = voice["ring_buffer_s"]
         if type(duration) is not int or duration <= 0:
             raise ValueError("voice.ring_buffer_s must be a positive integer")
-        return cls(voice["input_device"], voice["output_device"], duration)
+        cabin = {
+            key: voice.get(key, default)
+            for key, default in (
+                ("cabin_baseline_s", 60.0),
+                ("cabin_shout_db", 15.0),
+                ("cabin_shout_s", 1.0),
+            )
+        }
+        for key, value in cabin.items():
+            if type(value) not in (int, float) or not isfinite(value) or value <= 0:
+                raise ValueError(f"voice.{key} must be a positive finite number")
+        return cls(
+            voice["input_device"],
+            voice["output_device"],
+            duration,
+            **cabin,
+        )
 
 
 @dataclass(frozen=True)
