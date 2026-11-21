@@ -87,7 +87,7 @@ core:
 cv:
   # camera / publisher / fake / face_landmarks: from the cv/cp0 branch (CV owner's layout).
   camera:
-    index: 0
+    index: 1                       # USB HTI-UC320 on the demo laptop
     max_index: 10
     capture_width: 1280
     capture_height: 720
