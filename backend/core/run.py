@@ -30,6 +30,7 @@ from backend.bus.client import BusClient
 from backend.config import get_config
 from backend.core.alerts import Alert, AlertManager
 from backend.core.events import handle_detector_event
+from backend.core.triplog import TripLog
 from backend.core.vehicle import Injector, Player, load_trips
 from backend.schemas import validate
 
@@ -73,6 +74,7 @@ class FakeCore:
         self.checkin = cfg["core"]["checkin"]
         self.rate_hz = cfg["core"]["vehicle"]["rate_hz"]
         self.injector = attach_injector(bus, cfg)
+        self.triplog = attach_triplog(bus, cfg)
         self.replies: dict[str, asyncio.Future[dict[str, Any]]] = {}
 
     def on_reply(self, envelope: dict[str, Any]) -> None:
@@ -202,7 +204,33 @@ def log_hook(name: str) -> Any:
     return hook
 
 
-def attach_alerts(bus: BusClient, cfg: dict[str, Any]) -> AlertManager:
+def attach_triplog(bus: BusClient, cfg: dict[str, Any]) -> TripLog:
+    """Trip log (LEAD-T12): every configured topic, as it went over the bus (AL-04)."""
+    triplog = TripLog(cfg["core"]["triplog"])
+    bus.subscribe(triplog.topics, triplog.write)
+    return triplog
+
+
+def alert_created(triplog: TripLog) -> Any:
+    def note(alert: Alert) -> None:
+        triplog.note(
+            "alert_created",
+            {
+                "alert_id": alert.alert_id,
+                "type": alert.type,
+                "tier": alert.tier,
+                "lang": alert.lang,
+                "text": alert.text,
+                "signals": alert.signals,
+            },
+        )
+
+    return note
+
+
+def attach_alerts(
+    bus: BusClient, cfg: dict[str, Any], triplog: TripLog | None = None
+) -> AlertManager:
     """Alert Manager (LEAD-T10) on the bus; core must run tick_loop() alongside."""
     manager = AlertManager(
         cfg["core"]["alerts"],
@@ -210,6 +238,7 @@ def attach_alerts(bus: BusClient, cfg: dict[str, Any]) -> AlertManager:
         on_follow_up=log_hook("follow-up"),
         on_emergency=log_hook("emergency"),
         on_alarm=log_hook("alarm"),
+        on_submit=alert_created(triplog) if triplog else None,
     )
     bus.subscribe(["voice.status"], checked("voice.status", manager.on_voice_status))
     bus.subscribe(["voice.reply"], checked("voice.reply", manager.on_voice_reply))
@@ -242,7 +271,7 @@ async def tick_loop(manager: AlertManager, period_s: float = 0.1) -> None:
 
 async def run_live(bus: BusClient, cfg: dict[str, Any]) -> None:
     vehicle = cfg["core"]["vehicle"]
-    alerts = attach_alerts(bus, cfg)
+    alerts = attach_alerts(bus, cfg, attach_triplog(bus, cfg))
     injector = attach_injector(bus, cfg)
     trips = load_trips(vehicle)
     if trips:

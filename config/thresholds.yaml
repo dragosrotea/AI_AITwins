@@ -78,6 +78,10 @@ core:
     crash_g: 5.0
     crash_spike_s: 0.2             # how long the crash spike lasts
     crash_stop_s: 3                # speed ramps to 0 within this, then stays 0 (CR-01)
+  triplog:                         # LEAD-T12, AL-04: one JSONL file per trip, kept local
+    dir: logs
+    topics: [detector.event, alert.state, voice.say, voice.status, voice.reply, control.music,
+             control.trip, control.inject, control.replay, checkin.schedule, trip.summary]
   fake:                            # core --fake (LEAD-T06): synthetic drive and alert cycle
     alert_every_s: 15
     speak_s: 3

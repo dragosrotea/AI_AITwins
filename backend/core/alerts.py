@@ -85,6 +85,7 @@ class AlertManager:
         on_follow_up: Hook = _noop,
         on_emergency: Hook = _noop,
         on_alarm: Hook = _noop,
+        on_submit: Callable[[Alert], None] | None = None,
     ) -> None:
         self.cfg = cfg
         self.publish = publish
@@ -92,6 +93,7 @@ class AlertManager:
         self.on_follow_up = on_follow_up
         self.on_emergency = on_emergency
         self.on_alarm = on_alarm
+        self.on_submit = on_submit  # e.g. the trip log, for the trigger signals (AL-04)
         self.lang = cfg["default_lang"]
         self.queue: list[Alert] = []
         self.active: Alert | None = None
@@ -116,6 +118,8 @@ class AlertManager:
             return None
         alert = Alert(type, tier, text, lang or self.lang, short_text, signals or {})
         alert.seq = next(self._seq)
+        if self.on_submit is not None:
+            self.on_submit(alert)
         self._enqueue(alert)
         if tier == "T3" and self.active is not None and self.active.tier != "T3":
             self._preempt()
