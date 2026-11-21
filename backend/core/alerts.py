@@ -269,11 +269,10 @@ class AlertManager:
         self.active = alert
         if first:
             alert.spoken = alert.text
-        level = (
-            self.cfg["t3_music_level"]
-            if alert.tier == "T3"
-            else self.cfg["music_duck_volume"] / 100
-        )
+        if alert.tier == "T3":
+            level = self.cfg["t3_music_level"]
+        else:  # per type first: road rage only lowers the music by 30% (RR-06)
+            level = self.cfg["duck_level"].get(alert.type, self.cfg["music_duck_volume"] / 100)
         self.publish("control.music", {"duck": True, "level": level})
         alert.deadline = (
             self.clock()

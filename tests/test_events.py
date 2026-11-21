@@ -222,3 +222,67 @@ def test_templates_never_ask_to_look_or_touch() -> None:
     for langs in TEMPLATES.values():
         for text, short in langs.values():
             assert not any(word in (text + short).lower() for word in banned)
+
+
+# LEAD-T18: calm-down flow for core's road_rage (RR-06)
+
+
+def rage(firm: bool = False, src: str = "core") -> dict[str, Any]:
+    signals = {"face": 0.2, "voice": 1.0, "driving": 1.0, "agreeing": ["voice", "driving"]}
+    return event("road_rage", src, score=90.0 if firm else 60.0, signals={**signals, "firm": firm})
+
+
+def test_road_rage_ducks_music_to_0_7_then_speaks(rig: Rig) -> None:
+    alert = asyncio.run(rig.router.handle(rage()))
+    assert alert is not None and alert.type == "road_rage" and alert.tier == "T2"
+    topics = [t for t, _ in rig.sent]
+    duck = next(d for t, d in rig.sent if t == "control.music")
+    assert duck == {"duck": True, "level": 0.7}  # RR-06: 30% lower, not the usual 0.2
+    assert topics.index("control.music") < topics.index("voice.say")  # duck first, then speak
+    say = rig.says()[0]
+    assert say["text"] == english_fallback("road_rage", 1).text and say["text"].endswith("?")
+
+
+def test_firm_rage_suggests_pulling_over(rig: Rig) -> None:
+    asyncio.run(rig.router.handle(rage(firm=True)))
+    assert rig.says()[0]["text"] == english_fallback("road_rage", 3).text
+    assert "pull over" in rig.says()[0]["text"]
+
+
+def test_road_rage_only_from_core(rig: Rig) -> None:
+    assert asyncio.run(rig.router.handle(rage(src="cv"))) is None
+    assert rig.sent == []
+
+
+def test_llm_calm_line_over_20_words_falls_back() -> None:
+    long_line = "Hey " * 21 + "are you okay?"  # 23 words: Voice's own check allows 25
+
+    async def chatty(ctx: dict[str, Any], timeout_s: float) -> str | None:
+        return long_line
+
+    rig = Rig(generate=chatty)
+    alert = asyncio.run(rig.router.handle(rage()))
+    assert alert is not None and alert.signals["text_path"] == "template"
+
+
+def test_llm_calm_line_gets_the_context() -> None:
+    seen: list[dict[str, Any]] = []
+
+    async def calm(ctx: dict[str, Any], timeout_s: float) -> str | None:
+        seen.append(ctx)
+        return "That was a lot. Can you breathe slowly with me?"
+
+    rig = Rig(generate=calm)
+    alert = asyncio.run(rig.router.handle(rage(firm=True)))
+    assert alert is not None and alert.signals["text_path"] == "llm"
+    assert seen[0]["event_type"] == "road_rage" and seen[0]["firm"] is True
+    assert rig.says()[0]["text"] == "That was a lot. Can you breathe slowly with me?"
+
+
+def test_every_road_rage_line_fits_rr06() -> None:
+    from backend.llm.templates import english_templates
+
+    lines = [entry.text for entry in english_templates()["road_rage"]]
+    lines += [line for pair in TEMPLATES["road_rage"].values() for line in pair]
+    for line in lines:
+        assert line.endswith("?") and len(line.split()) <= 20, line

@@ -26,6 +26,8 @@ core:
     slow_reply_s: 3                # VR-07: two slow replies in a row raise fatigue
     music_duck_volume: 20          # 0-100 while speaking and listening (T1, T2)
     t3_music_level: 0.0            # T3: music muted (tier table, requirements section 4)
+    duck_level:                    # per type, overrides music_duck_volume (0-1)
+      road_rage: 0.7               # RR-06: lower the music by 30%, then speak
     speak_max_s: 15                # longest wait for voice to finish speaking before counting
     voice_gap_s: 0.5               # pause before the next voice.say: voice drops non-T3 while busy
     default_lang: en               # until control.trip sets the driver's language
@@ -104,6 +106,12 @@ core:
     cancels:                       # DD-04: tired drivers get a break, not a game
       drowsiness: [zoning_out]
       microsleep: [zoning_out]
+    fusion_tiers:                  # core's own detector.event types (LEAD-T17/T18)
+      road_rage: T2
+    max_words:                     # tighter than the LLM's own 25-word check
+      road_rage: 20                # RR-06
+    firm_variant:                  # template variant for firm messages (RR-05, score >= 85)
+      road_rage: 3                 # "If you need a breather, can you pull over somewhere safe?"
   triplog:                         # LEAD-T12, AL-04: one JSONL file per trip, kept local
     dir: logs
     topics: [detector.event, alert.state, voice.say, voice.status, voice.reply, control.music,

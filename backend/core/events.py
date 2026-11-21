@@ -58,6 +58,10 @@ TEMPLATES: dict[str, dict[str, tuple[str, str]]] = {
         "en": ("The phone can wait until we stop. Can you leave it for now?", "Can it wait?"),
         "ro": ("Telefonul poate aștepta până oprim. Îl lași deocamdată?", "Poate aștepta?"),
     },
+    "road_rage": {  # RR-06: calm, non-judgmental, at most 20 words (from core's fusion, T17)
+        "en": ("That sounded stressful. Shall we take a slow breath together?", "Are you okay?"),
+        "ro": ("A fost un moment tensionat. Respirăm adânc împreună?", "Ești bine?"),
+    },
     "no_face": {  # CV-06
         "en": ("I can't see you at the moment. Is everything okay?", "Are you okay?"),
         "ro": ("Nu te mai văd în acest moment. Este totul în regulă?", "Ești bine?"),
@@ -75,13 +79,15 @@ class EventRouter:
         self._wording: set[str] = set()  # types waiting on the LLM, so repeats are dropped
 
     async def handle(self, envelope: dict[str, Any]) -> Alert | None:
-        if envelope.get("src") != "cv":
-            return None
         data = envelope["data"]
         kind = data["type"]
-        tier = self.routing["tiers"].get(kind)
+        # CV's visual events, and core's own fusion events (road_rage, LEAD-T18); core never
+        # routes anything else of its own, so no event can loop.
+        sources = {"cv": self.routing["tiers"], "core": self.routing["fusion_tiers"]}
+        tier = sources.get(envelope.get("src"), {}).get(kind)
         if tier is None or kind not in TEMPLATES:
-            log.info("detector.event %s from cv: no route, skipped", kind)
+            if envelope.get("src") == "cv":
+                log.info("detector.event %s from cv: no route, skipped", kind)
             return None
         if data["tier"] != tier:
             log.info("detector.event %s: cv says %s, routing uses %s", kind, data["tier"], tier)
@@ -96,8 +102,16 @@ class EventRouter:
             return None
         self._wording.add(kind)
         try:
-            ctx = {"event_type": kind, "tier": tier, "signals": data.get("signals", {})}
-            wording = await self.writer.write(kind, tier, ctx)
+            signals_in = data.get("signals", {})
+            firm = bool(signals_in.get("firm"))  # RR-05: score >= 85
+            ctx = {"event_type": kind, "tier": tier, "signals": signals_in, "firm": firm}
+            wording = await self.writer.write(
+                kind,
+                tier,
+                ctx,
+                max_words=self.routing["max_words"].get(kind),
+                variant=self.routing["firm_variant"].get(kind) if firm else None,
+            )
         finally:
             self._wording.discard(kind)
         _text, short = TEMPLATES[kind]["en"]
