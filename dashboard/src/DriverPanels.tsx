@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import LiquidGlass from 'liquid-glass-react'
 import { bus } from './bus'
 import type { AlertState, CheckinSchedule, Pretrip, TopicEnvelope, VoiceStatus } from './types'
 
@@ -83,19 +82,7 @@ export function DriverStatusPanel() {
   const statusLabel = level === 'clear' ? 'ALL CLEAR' : level === 'caution' ? 'CAUTION' : 'ATTENTION REQUIRED'
 
   return (
-    <LiquidGlass
-      className="driver-liquid-glass"
-      style={{ width: '100%' }}
-      cornerRadius={24}
-      padding="0"
-      displacementScale={18}
-      blurAmount={0.025}
-      saturation={125}
-      aberrationIntensity={0.5}
-      elasticity={0.04}
-      overLight
-    >
-      <section className={`driver-status-card driver-status-card--${level}${isSpeaking ? ' driver-status-card--speaking' : ''}`} aria-label="Driver safety status">
+    <section className={`driver-status-card driver-status-card--${level}${isSpeaking ? ' driver-status-card--speaking' : ''}`} aria-label="Driver safety status">
         <div className="driver-status-topline">
           <span className="driver-status-indicator" aria-hidden="true" />
           <span>{statusLabel}</span>
@@ -115,8 +102,7 @@ export function DriverStatusPanel() {
               : remaining <= 0 ? 'Due now' : formatCountdown(remaining)}
           </strong>
         </div>
-      </section>
-    </LiquidGlass>
+    </section>
   )
 }
 
