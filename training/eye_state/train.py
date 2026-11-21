@@ -126,10 +126,6 @@ def _metrics(labels: list[int], predictions: list[int]) -> tuple[float, float]:
 
 
 def train(args: argparse.Namespace) -> None:
-    import cv2
-    import torch
-    from torch.utils.data import DataLoader
-
     settings = load_cv_settings(args.config)
     samples = discover_mrl_samples(args.data_dir)
     print(f"MRL root: {args.data_dir}")
@@ -151,6 +147,10 @@ def train(args: argparse.Namespace) -> None:
     validation_subjects = {sample.subject for sample in validation_samples}
     if train_subjects & validation_subjects:
         raise RuntimeError("Subject leakage detected between training and validation")
+
+    import cv2
+    import torch
+    from torch.utils.data import DataLoader
 
     torch.manual_seed(args.seed)
     device = torch.device(args.device)
