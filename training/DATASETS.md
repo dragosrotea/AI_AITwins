@@ -2,12 +2,12 @@
 
 Store local dataset copies under `data/raw/`; those files are excluded from git. Before a training run, inspect the downloaded folder structure and a few filenames because layouts vary.
 
-| Purpose | Source | Licence or terms | Approximate size | Download method |
+| Purpose | Source | Licence or terms | Local status and size | Download method |
 |---|---|---|---:|---|
-| Eye-state training | [MRL Eye Dataset](http://mrl.cs.vsb.cz/eyedataset) | Subject to the MRL dataset licence/page terms; verify acceptance before use | Known to be large (not recorded here until inspected) | Manual download or approved mirror (`mrl`) |
-| Yawn training/evaluation | [YawDD](https://ieee-dataport.org/open-access/yawdd-yawning-detection-dataset) | IEEE DataPort terms; a free account is required | Varies by subset; not recorded until downloaded | Manual sign-up/download (`yawdd`) |
-| Expression training | [FER2013](https://www.kaggle.com/datasets/msambare/fer2013) | Verify the Kaggle dataset licence and terms at download time | Not recorded here until downloaded | Kaggle CLI (`fer2013`) |
-| Distraction/drowsiness evaluation | [DMD](https://dmd.vicomtech.org/#Download) | Creative Commons Attribution-NonCommercial-NoDerivatives 4.0; approved access terms apply | Access-controlled; RGB subset availability may vary | Manual access request (`dmd`) |
+| Eye-state training | [MRL Eye Dataset](http://mrl.cs.vsb.cz/eyedataset) | Follow the terms published by MRL; verify permitted use before training | Not present in this checkout | Manual download after reviewing the official page (`mrl`) |
+| Yawn training/evaluation | [YawDD](https://ieee-dataport.org/open-access/yawdd-yawning-detection-dataset) | IEEE DataPort terms; the dataset page describes research use and restricts public screenshots based on participant permissions | Not present in this checkout | Free IEEE DataPort account and manual download (`yawdd`) |
+| Expression training | [FER2013](https://www.kaggle.com/datasets/msambare/fer2013) | Verify the dataset licence and Kaggle terms at download time | Not present in this checkout | Kaggle CLI after account and licence review (`fer2013`) |
+| Distraction/drowsiness evaluation | [DMD](https://dmd.vicomtech.org/#Download) | Creative Commons Attribution-NonCommercial-NoDerivatives 4.0; approved access terms apply | Present locally; approximately 5.5 GiB | Manual access request for new copies (`dmd`) |
 | Age/face experiments | [Age Detection - Human Faces 18-60](https://www.kaggle.com/datasets/trainingdatapro/age-detection-human-faces-18-60-years) | CC BY-NC-ND 4.0 according to Kaggle metadata | 357,965,008 bytes (metadata) | Kaggle CLI (`age_faces`) |
 | Distracted-driving visual data | [SynDD1 / PMC9730022](https://pmc.ncbi.nlm.nih.gov/articles/PMC9730022/) | Dataset licence agreement PDF supplied with the data; review before use | Varies by subset; not recorded here until downloaded | Manual Mendeley download (`syndd1`) |
 
@@ -19,6 +19,17 @@ Store local dataset copies under `data/raw/`; those files are excluded from git.
 - The Kaggle user must accept the age-dataset terms and agree that CC BY-NC-ND 4.0 permits the planned research use.
 - YawDD and DMD require manual sign-up/access. Scripts must not bypass their terms or download credentials.
 - The PMC article's SynDD1 record is hosted by Mendeley: [ptcp7rp3wb/4](https://data.mendeley.com/datasets/ptcp7rp3wb/4). Download the included licence agreement before use.
+
+Use `data/download_datasets.sh status` to check local availability. The script
+downloads the MediaPipe Face Landmarker asset from Google's official model
+storage and FER2013 through the Kaggle CLI after `ACCEPT_FER2013_TERMS=yes`;
+it prints manual steps for MRL, YawDD, and DMD rather than automating account
+or access-controlled downloads. Review FER2013 terms before accepting them.
+
+The current checkout also has `age_detection` (approximately 342 MiB) and
+`emotion_detection` (approximately 142 MiB) under `data/raw/`. The DMD copy is
+approximately 5.5 GiB; inspect its exact annotation and video layout before
+training because the local subset is not the complete dataset.
 
 ## Local layout
 
