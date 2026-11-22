@@ -19,39 +19,86 @@ Processes exchange typed messages through the broker at `ws://localhost:8765/bus
 
 ## Requirements
 
-- Python 3.11 (see `requirements.txt`)
-- Node.js and npm
-- For live CV/voice modes, the matching camera, audio devices, model files, and Python packages
-- Internet access for first-time package/model setup; demo fallback modes are available for several processes
+| What | Version / notes |
+| --- | --- |
+| Python | **3.11** (macOS: `brew install python@3.11`) |
+| Node.js | **20** with npm (macOS: `brew install node@20`; it is keg-only, so add `export PATH="/opt/homebrew/opt/node@20/bin:$PATH"` to your shell) |
+| Webcam | built-in laptop camera by default (camera index 0) |
+| Microphone | any; the driver answers every alert by voice |
+| Internet | needed once for installing and the first model downloads; the demo then runs offline (LLM lines fall back to templates, speech to the system voice) |
 
-## Install and run
+On macOS, allow **Camera** and **Microphone** for your terminal app (System Settings > Privacy & Security) the first time it asks.
+
+## Install (once)
 
 From the repository root:
 
 ```bash
+# 1. Python packages
 python3.11 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip
 .venv/bin/python -m pip install -r requirements.txt
-cd dashboard
-npm install
-cd ..
+
+# 2. Dashboard packages
+cd dashboard && npm install && cd ..
+
+# 3. Face-landmark model for the camera (not in Git, about 4 MB)
+bash data/download_datasets.sh mediapipe
+
+# 4. Secrets: optional LLM key (without one, alerts and trivia use templates and the offline question bank)
+cp .env.example .env        # then set GROQ_API_KEY
 ```
 
-Start all services with simulated inputs in one terminal:
+Already in the repository: the trained CV models (`models/trained/*.pt`, `models/eye_state.onnx`), the pre-recorded voice clips and the demo music. The speech-to-text model (Whisper `base`) downloads by itself on the first voice run.
+
+Optional, for real vehicle data: download **UAH-DriveSet v1** into `data/UAH-DRIVESET-v1/` as described in [`docs/datasets.md`](docs/datasets.md) (a licence form, so it cannot be scripted). Without it, core publishes a synthetic motorway drive and everything else works the same.
+
+## Run
+
+Two terminals, from the repository root:
 
 ```bash
-DRIVEMATE_PROFILE=demo bash scripts/run_all.sh --fake
+# Terminal 1: broker, core, camera, voice, heart rate (simulated), road context (simulated)
+DRIVEMATE_PROFILE=demo scripts/run_all.sh
+
+# Terminal 2: dashboard
+cd dashboard && npm run dev
 ```
 
-Start the dashboard in a second terminal:
+Open <http://localhost:5173>. `Ctrl+C` in each terminal stops everything. `run_all.sh` restarts any process that exits, so a camera or microphone that appears later is picked up on its own.
+
+- `DRIVEMATE_PROFILE=demo` shortens time windows for the 5-minute demo; leave it out for real-trip timings.
+- **The car starts parked** (0 km/h) so the pre-trip form can be filled in; **Start trip** starts the motorway replay.
+- Demo buttons in the replay panel: **Harsh brake**, **Simulate crash**, **Zone out (trivia)**.
+
+Other ways to run:
 
 ```bash
-cd dashboard
-npm run dev
+scripts/run_all.sh --fake            # everything on synthetic data: no camera, microphone or LLM needed
+scripts/run_all.sh --fake=cv,voice   # only these on synthetic data, the rest live
+python -m backend.cv.run --camera 1  # one process alone, here CV on a USB webcam
 ```
 
-Open the local URL printed by Vite. To run processes with their available live sources, omit `--fake`; individual services and their simulator options are documented in their module help. Stop the services with `Ctrl+C` in the `run_all.sh` terminal.
+To use a USB webcam with `run_all.sh`, set `cv.camera.index: 1` in `config/thresholds.yaml` (with a USB camera plugged in, macOS may swap the numbers; try 0 and 1).
 
-The dashboard uses `ws://localhost:8765/bus` by default. To change it, set `VITE_BUS_URL` in `dashboard/.env.local`. Never put server-side secrets in a `VITE_` variable; browser-visible variables are public. Copy `.env.example` for optional server integrations and keep populated `.env` files out of Git.
+### Check that it works
+
+```bash
+.venv/bin/python scripts/smoke_test.py   # with the app running: every topic arrives at its rate
+.venv/bin/python -m pytest -q            # unit tests
+```
+
+### Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| `Unable to open webcam index 0` in the `[cv]` log | Allow camera access for the terminal, close other apps using the camera, or change `cv.camera.index` |
+| Voice never hears you | Allow microphone access for the terminal, then restart `run_all.sh` |
+| `address already in use` on 8765 or 5173 | An older run is still going: stop it, or `pkill -f "m backend\."` |
+| `npm: command not found` | Node 20 is keg-only: add it to `PATH` (see Requirements) |
+| Alerts sound generic | No LLM key or no internet: templates are used by design; set `GROQ_API_KEY` in `.env` |
+
+The dashboard uses `ws://localhost:8765/bus` by default. To change it, set `VITE_BUS_URL` in `dashboard/.env.local`. Never put server-side secrets in a `VITE_` variable; browser-visible variables are public.
 
 ## Dashboard
 

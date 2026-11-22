@@ -1,6 +1,8 @@
-# Python 3.11. Install: pip install -r requirements.txt
+# DriveMate runtime. Python 3.11.
+#   python3.11 -m venv .venv && .venv/bin/python -m pip install -r requirements.txt
+# Model training has its own list: training/requirements.txt
 
-# Bus, schemas, config
+# Bus, schemas, config, LLM client
 fastapi>=0.110
 uvicorn[standard]>=0.29
 websockets>=12.0
@@ -9,27 +11,24 @@ pyyaml>=6.0
 python-dotenv>=1.0
 httpx>=0.27
 
-# Computer vision
+# Computer vision: face landmarks, eye-state ONNX model, trained PyTorch classifiers
 opencv-python>=4.9
 mediapipe>=0.10.14
 numpy>=1.26
-ultralytics>=8.2
-
-# Model training and vehicle replay
+onnxruntime>=1.17
 torch>=2.2
-scikit-learn>=1.4
-lightgbm>=4.3
-pandas>=2.2
+torchvision>=0.17
+pillow>=10.0
 
-# Voice: speech in and out (Silero VAD loads through torch)
+# Voice: speech to text, voice activity, microphone, speech out, audio decoding
 faster-whisper>=1.0
 webrtcvad-wheels>=2.0.11
 sounddevice>=0.4.6
 edge-tts>=6.1
 pyttsx3>=2.90
-
-# Integrations
-twilio>=9.0
+miniaudio>=1.59
+langdetect>=1.0.9
+pywin32>=306; sys_platform == "win32"   # offline Windows voice (pyttsx3 SAPI)
 
 # Dev
 pytest>=8.0
