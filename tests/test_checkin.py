@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import time
 from typing import Any
 
@@ -16,6 +17,7 @@ from backend.core.wording import AlertWriter
 from backend.schemas import validate
 
 CORE = load_config("default")["core"]
+GAP = math.ceil(CORE["alerts"]["voice_gap_s"]) + 1  # whole seconds past the pause before a say
 CFG = CORE["checkin"]
 
 
@@ -204,7 +206,7 @@ def test_not_ok_offers_a_break_at_once_and_shortens() -> None:
     rig.advance(30 * 60)
     rig.answer("NOT_OK")
     assert rig.schedules()[-1]["interval_min"] < 30
-    rig.advance(1)
+    rig.advance(GAP)
     break_say = rig.spoken("break_due")
     assert len(break_say) == 1  # despite the 2 min non-critical limit: it answers the driver
 
@@ -214,9 +216,9 @@ def test_not_ok_to_a_break_offer_does_not_loop() -> None:
     rig.start()
     rig.advance(30 * 60)
     rig.answer("NOT_OK")
-    rig.advance(1)
+    rig.advance(GAP)
     rig.answer("NOT_OK")  # "no" to the break offer
-    rig.advance(1)
+    rig.advance(GAP)
     assert len(rig.spoken("break_due")) == 1
 
 

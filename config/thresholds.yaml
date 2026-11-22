@@ -30,7 +30,7 @@ core:
     duck_level:                    # per type, overrides music_duck_volume (0-1)
       road_rage: 0.7               # RR-06: lower the music by 30%, then speak
     speak_max_s: 15                # longest wait for voice to finish speaking before counting
-    voice_gap_s: 0.5               # pause before the next voice.say: voice drops non-T3 while busy
+    voice_gap_s: 2.0               # pause before the next voice.say (alarm rounds, repeats, next alert); voice drops non-T3 while busy
     alarm_audio_key: alarm         # VR-05: assets/audio/alarm.wav, played by voice instead of speech
     alarm_rounds: 5                # VR-05: alarm rounds after a T3 miss, until the driver answers
     default_lang: en               # English-only runtime
@@ -53,7 +53,7 @@ core:
     max_per_window: 3              # RR-07
     max_window_s: 1800             # RR-07
     weights: {face: 0.4, voice: 0.35, driving: 0.25}
-    face_threshold: 0.6            # RR-01: anger_p counts as angry from here
+    face_threshold: 0.7            # RR-01: anger_p counts as angry from here (laptop camera: neutral face ~0.44)
     face_hold_s: 3                 # RR-01: sustained this long, the face modality agrees
     voice_window_s: 10             # a shout or swear keeps the voice modality agreeing this long
     swears_full: 3                 # swears in 60 s that give the full voice component
@@ -197,7 +197,7 @@ cv:
     models_dir: models/trained
     rate_hz: 5
     distraction_threshold: 0.5
-    drowsiness_threshold: 0.5
+    drowsiness_threshold: 0.65     # DD-03: model probability (raised 22 Nov: fewer false drowsiness alerts)
     phone_threshold: 0.5
     yawn_blend_weight: 0.5         # DD-03: yawn score = (1-w) * blendshape + w * activity model
   zoning:
@@ -217,7 +217,7 @@ cv:
   yawn_count: 3                    # DD-03
   visual_events:
     cooldown_s: 30                 # CV-T10: suppress rapid repeat episodes of the same type
-  anger_threshold: 0.6             # RR-01
+  anger_threshold: 0.7             # RR-01 (raised 22 Nov: neutral face reads ~0.44 on the laptop camera)
   anger_hold_s: 3                  # RR-01
   phone_hold_s: 1.5                # PH-02
   zoning_stare_s: 60               # ZO-01

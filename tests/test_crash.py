@@ -166,10 +166,11 @@ def test_silence_sounds_the_alarm_then_escalates_at_20_s(rig: Rig) -> None:
     rig.crash()
     rig.advance(2)
     rig.reply("NONE", "")  # silence: alarm, not a repeat or a tier change
-    rig.advance(1)
+    gap = ALERTS["voice_gap_s"] + 0.5  # the pause before the next voice.say
+    rig.advance(gap)
     assert rig.says()[-1]["audio_key"] == ALERTS["alarm_audio_key"]
     assert rig.says()[-1]["tier"] == "T3"
-    rig.advance(CRASH["countdown_s"] - 4)
+    rig.advance(CRASH["countdown_s"] - 2 - gap - 1)  # 1 s before the countdown ends
     assert rig.emergencies == []  # still counting down
     rig.advance(2)
     assert rig.statuses()[-1] == "escalated"  # the dashboard's emergency banner

@@ -176,7 +176,7 @@ class Router:
                 "path": "keyword",
             }
         )
-        self.now += 1
+        self.now += CORE["alerts"]["voice_gap_s"] + 0.5  # past the pause before the next say
         self.am.tick()
 
 

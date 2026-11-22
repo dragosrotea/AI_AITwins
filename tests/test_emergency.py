@@ -48,9 +48,10 @@ def setup(tmp_path: Path) -> tuple[FakeBus, Any, TripLog]:
     return bus, manager, triplog
 
 
-def wait(manager: Any, seconds: float = 1.0) -> None:
+def wait(manager: Any, seconds: float | None = None) -> None:
     """Let the voice gap pass, so the next voice.say goes out."""
-    manager.clock.now += seconds
+    gap = CFG["core"]["alerts"]["voice_gap_s"] + 0.5
+    manager.clock.now += gap if seconds is None else max(seconds, gap)
     manager.tick()
 
 
