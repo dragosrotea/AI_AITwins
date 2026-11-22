@@ -197,6 +197,7 @@ cv:
     distraction_threshold: 0.5
     drowsiness_threshold: 0.5
     phone_threshold: 0.5
+    yawn_blend_weight: 0.5         # DD-03: yawn score = (1-w) * blendshape + w * activity model
   zoning:
     window_s: 60
     gaze_dispersion_deg: 2.0
