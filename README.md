@@ -82,7 +82,7 @@ The DMD recordings may share drivers between train and validation; age data has 
 
 ## Integrations and demo limits
 
-- Heart rate publishes the standard BLE heart-rate measurement when a supported device is available; `--sim` supports development. The Suunto 9 Peak Pro broadcast feasibility test was not completed, so do not claim live watch support without verifying it. FIT replay support is documented in `backend/integrations/hr/`.
+- Heart rate is simulated (`python -m backend.integrations.hr.run`, scenarios with `--scenario`) or replayed from a Suunto .FIT file (`--fit PATH`). There is no live Bluetooth mode: it was removed because it did not work reliably on every laptop. Present heart rate in the demo as simulated.
 - Road context can run in simulator mode. A real traffic/places API integration is optional and requires a restricted key and billing review.
 - The crash demo shows the emergency contact and location in the dashboard when external calling credentials are unavailable. Do not treat the demo as a real emergency service.
 - The trivia demo button in Replay & Demo Controls is intentionally marked pending: the current shared `control.inject` contract supports only harsh-brake and crash events. Core must add and approve a trigger before the UI can publish it.
