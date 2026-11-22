@@ -121,6 +121,10 @@ export default function ReplayControls() {
           <button type="button" className="inject-button-danger" onClick={() => sendInjector('crash')} disabled={!connected || crashRequested}>
             Simulate crash
           </button>
+          {/* TODO(core): enable only after ControlInject and the core handler expose a trivia demo event. */}
+          <button type="button" className="inject-button-secondary" disabled title="Waiting for a core-supported trivia trigger">
+            Trivia (hook pending)
+          </button>
         </div>
       </div>
 

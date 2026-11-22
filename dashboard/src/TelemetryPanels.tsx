@@ -121,6 +121,19 @@ function MetricGauge({
   hint?: string
 }) {
   const ratio = Math.max(0, Math.min(1, fill ?? 0))
+  const percent = ratio * 100
+  const colorStops = [[30, 125], [50, 78], [60, 38], [75, 0]] as const
+  let hue = percent <= colorStops[0][0] ? colorStops[0][1] : colorStops[colorStops.length - 1][1]
+  for (let index = 1; index < colorStops.length; index += 1) {
+    const [nextPercent, nextHue] = colorStops[index]
+    const [previousPercent, previousHue] = colorStops[index - 1]
+    if (percent <= nextPercent) {
+      const progress = (percent - previousPercent) / (nextPercent - previousPercent)
+      hue = previousHue + (nextHue - previousHue) * progress
+      break
+    }
+  }
+  const fillColor = `hsl(${hue} 72% 40%)`
   return (
     <div className="metric-gauge">
       <div className="metric-gauge-label">
@@ -131,14 +144,14 @@ function MetricGauge({
         <div className="metric-gauge-track metric-gauge-track--empty" />
       ) : (
         <div
-          className={`metric-gauge-track${ratio >= 0.7 ? ' metric-gauge-track--high' : ''}`}
+          className="metric-gauge-track"
           role="meter"
           aria-label={label}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={Math.round(ratio * 100)}
         >
-          <span style={{ width: `${ratio * 100}%` }} />
+          <span style={{ width: `${percent}%`, backgroundColor: fillColor }} />
         </div>
       )}
       {hint && <small>{hint}</small>}
@@ -146,14 +159,14 @@ function MetricGauge({
   )
 }
 
-function DriverMetrics() {
+export function DriverMetricsPanel() {
   useBusUpdates()
   const state = latest('driver.state')?.data
   const percent = (value: number | undefined) => value === undefined ? undefined : value * 100
   const displayPercent = (value: number | undefined) => value === undefined ? '—' : `${Math.round(value * 100)}%`
 
   return (
-    <section className="driver-metrics" aria-label="Live driver measurements">
+    <section className="panel-placeholder driver-metrics copilot-gauges-panel" aria-label="Live driver measurements">
       <p className="panel-label">DRIVER GAUGES</p>
       <div className="driver-gauge-grid">
         <MetricGauge label="Eye closure" value={state?.eye_closed_p} display={displayPercent(state?.eye_closed_p)} fill={percent(state?.eye_closed_p)} />
@@ -170,10 +183,7 @@ function DriverMetrics() {
 export function DriverCameraPanel() {
   return (
     <section className="panel-placeholder copilot-driver-panel telemetry-driver-panel">
-      <div className="driver-camera-layout">
-        <CameraPreview />
-        <DriverMetrics />
-      </div>
+      <CameraPreview />
     </section>
   )
 }
