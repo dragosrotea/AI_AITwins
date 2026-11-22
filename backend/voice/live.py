@@ -324,7 +324,7 @@ async def interact(
         raise
     except Exception as error:
         timing.outcome = "error"
-        log.error("Voice interaction failed (%s)", type(error).__name__)
+        log.error("Voice interaction failed (%s: %s)", type(error).__name__, error)
     finally:
         if latency_log is not None:
             try:

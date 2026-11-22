@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import subprocess
 import sys
 from dataclasses import dataclass
 from locale import windows_locale
@@ -75,7 +76,22 @@ def _is_english_voice(languages: list[str | bytes]) -> bool:
     return False
 
 
+def _render_macos_say(text: str) -> bytes:
+    """macOS: `say` writes a real 16-bit WAV (pyttsx3 writes AIFF that miniaudio cannot read)."""
+    with TemporaryDirectory(prefix="drivemate-tts-") as directory:
+        path = Path(directory) / "speech.wav"
+        subprocess.run(
+            ["say", "-o", str(path), "--data-format=LEI16@22050", text],
+            check=True,
+            capture_output=True,
+            timeout=15,
+        )
+        return _require_audio(path.read_bytes())
+
+
 def _render_system_voice(text: str) -> bytes:
+    if sys.platform == "darwin":
+        return _render_macos_say(text)
     from pyttsx3.engine import Engine
 
     # A fresh engine keeps Windows COM objects on the worker that created them.
