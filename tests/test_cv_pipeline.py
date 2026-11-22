@@ -30,7 +30,7 @@ def _landmarks() -> list[SimpleNamespace]:
 def test_config_has_live_camera_and_eye_settings() -> None:
     settings = load_cv_settings()
 
-    assert settings["camera"]["index"] == 1
+    assert settings["camera"]["index"] == 0  # built-in laptop camera
     assert settings["camera"]["capture_width"] == 1280
     assert settings["camera"]["process_width"] == 640
     assert settings["eye_state"]["input_size"] == 64
