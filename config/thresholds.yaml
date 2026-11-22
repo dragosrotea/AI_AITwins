@@ -72,6 +72,8 @@ core:
     engagement_window_s: 1800      # ZO-05
     weights: {visual: 0.7, monotony: 0.3}
     feedback_question: "How are you feeling now?"  # ZO-04 feedback ends with a question (VR-01)
+    trivia_topics: [geography, space, animals, food, music, sport, history, science, cars,
+                    inventions, movies, the human body, oceans, famous buildings, languages]
   checkin:
     base_interval_min: 30          # CI-02
     short_sleep_h: 6               # CI-02
@@ -153,7 +155,7 @@ cv:
     pitch_sign: -1.0
   eye_state:
     model_path: models/eye_state.onnx
-    closed_probability_threshold: 0.5
+    closed_probability_threshold: 0.4  # DD-02 (lowered 22 Nov: closed eyes were missed on the laptop camera)
     use_ear_fallback: true
     ear_closed_threshold: 0.18
     ear_open_threshold: 0.23
@@ -200,6 +202,9 @@ cv:
     drowsiness_threshold: 0.65     # DD-03: model probability (raised 22 Nov: fewer false drowsiness alerts)
     phone_threshold: 0.5
     yawn_blend_weight: 0.5         # DD-03: yawn score = (1-w) * blendshape + w * activity model
+    eye_closed_blend_weight: 0.3   # DD-02: eye_closed_p = (1-w) * eye-state model + w * activity model
+    blink_threshold: 0.5           # activity-model blink starts here
+    blink_rearm_threshold: 0.3     # and ends below this
   zoning:
     window_s: 60
     gaze_dispersion_deg: 2.0
@@ -209,8 +214,8 @@ cv:
     weights: {gaze: 0.45, blink: 0.25, head: 0.30}
   no_face_notice_s: 2              # CV-06
   no_face_warning_s: 5             # CV-06
-  eyes_off_yaw_deg: 30             # DD-01
-  eyes_off_pitch_deg: -20          # DD-01
+  eyes_off_yaw_deg: 20             # DD-01 (lowered 22 Nov for the laptop camera)
+  eyes_off_pitch_deg: -15          # DD-01 (lowered 22 Nov for the laptop camera)
   eyes_off_s: 2                    # DD-01
   microsleep_s: 1.0                # DD-02
   perclos_threshold: 0.15          # DD-03

@@ -397,6 +397,9 @@ def _driver_data(
     return data
 
 
+_ACTIVITY_WARNED: list[bool] = []  # first activity-model failure is logged as a warning
+
+
 def _activity_scores(predictions: dict[str, Any]) -> dict[str, Any]:
     """Map trained multilabel outputs to the app's distraction, fatigue, and phone cues."""
     distraction = predictions.get("distraction", {}).get("probabilities", {})
@@ -591,7 +594,11 @@ def run_live(
                     elif activity_scores["blink_model_p"] <= blink_rearm:
                         model_blink_active = False
                 except Exception:
-                    log.debug("Activity models failed on frame", exc_info=True)
+                    if not _ACTIVITY_WARNED:  # say it once, loudly: a missing setting hid here
+                        log.warning("Activity models disabled on this frame", exc_info=True)
+                        _ACTIVITY_WARNED.append(True)
+                    else:
+                        log.debug("Activity models failed on frame", exc_info=True)
                     activity_scores = {
                         "distraction_model_p": 0.0,
                         "drowsiness_model_p": 0.0,

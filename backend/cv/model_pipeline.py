@@ -96,7 +96,7 @@ class FourModelPipeline:
 
         predictions: dict[str, Any] = {}
         with self._torch.inference_mode():
-            for task in MODEL_NAMES:
+            for task in self.tasks:
                 logits = self.models[task](tensor)[0]
                 classes = self.metadata[task]["classes"]
                 if self.metadata[task]["multilabel"]:
