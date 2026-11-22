@@ -162,19 +162,20 @@ function MetricGauge({
 export function DriverMetricsPanel() {
   useBusUpdates()
   const state = latest('driver.state')?.data
-  const percent = (value: number | undefined) => value === undefined ? undefined : value * 100
+  // MetricGauge takes fill as a 0-1 fraction (it clamps); these values already are 0-1.
+  const fraction = (value: number | undefined) => value
   const displayPercent = (value: number | undefined) => value === undefined ? '—' : `${Math.round(value * 100)}%`
 
   return (
     <section className="panel-placeholder driver-metrics copilot-gauges-panel" aria-label="Live driver measurements">
       <p className="panel-label">DRIVER GAUGES</p>
       <div className="driver-gauge-grid">
-        <MetricGauge label="Eye closure" value={state?.eye_closed_p} display={displayPercent(state?.eye_closed_p)} fill={percent(state?.eye_closed_p)} />
-        <MetricGauge label="PERCLOS · 60 s" value={state?.perclos_60s} display={displayPercent(state?.perclos_60s)} fill={percent(state?.perclos_60s)} />
+        <MetricGauge label="Eye closure" value={state?.eye_closed_p} display={displayPercent(state?.eye_closed_p)} fill={fraction(state?.eye_closed_p)} />
+        <MetricGauge label="PERCLOS" hint="share of time eyes closed" value={state?.perclos_60s} display={displayPercent(state?.perclos_60s)} fill={fraction(state?.perclos_60s)} />
         <MetricGauge label="Head yaw" value={state?.head.yaw} display={state ? `${state.head.yaw.toFixed(0)}°` : '—'} fill={state ? Math.abs(state.head.yaw) / 60 : undefined} hint="±60° scale" />
         <MetricGauge label="Head pitch" value={state?.head.pitch} display={state ? `${state.head.pitch.toFixed(0)}°` : '—'} fill={state ? Math.abs(state.head.pitch) / 45 : undefined} hint="±45° scale" />
-        <MetricGauge label="Anger cue" value={state?.anger_p} display={displayPercent(state?.anger_p)} fill={percent(state?.anger_p)} />
-        <MetricGauge label="Yawn cue" value={state?.yawn_p} display={displayPercent(state?.yawn_p)} fill={percent(state?.yawn_p)} hint={state ? `${state.yawns_10m} in 10 min` : 'Count: —'} />
+        <MetricGauge label="Anger cue" value={state?.anger_p} display={displayPercent(state?.anger_p)} fill={fraction(state?.anger_p)} />
+        <MetricGauge label="Yawn cue" value={state?.yawn_p} display={displayPercent(state?.yawn_p)} fill={fraction(state?.yawn_p)} hint={state ? `${state.yawns_10m} in 10 min` : 'Count: —'} />
       </div>
     </section>
   )
