@@ -17,6 +17,7 @@ or touch anything, never blame, never encourage driving on when tired.
 from __future__ import annotations
 
 import logging
+import random
 import time
 from collections import deque
 from collections.abc import Callable
@@ -110,6 +111,7 @@ class EventRouter:
         self.road_blocked = False
         self._engagement_epoch = 0
         self._engagement_index = 0
+        self._asked: deque[str] = deque(maxlen=10)  # recent questions, kept across trips
 
     def on_trip(self, data: dict[str, Any]) -> None:
         self._engagement_epoch += 1
@@ -239,6 +241,7 @@ class EventRouter:
                 "engagement": self.engagement,
                 "region": data.get("signals", {}).get("region"),
                 "fallback_index": self._engagement_index,
+                **self._variety(),
             },
             self.writer.timeout_s,
         )
@@ -258,8 +261,17 @@ class EventRouter:
         )
         if alert is not None:
             self._engagement_index += 1
+            self._remember(text)
             self._engagements.append(self.clock())
         return alert
+
+    def _variety(self) -> dict[str, Any]:
+        """A random topic and the recent questions, so trivia does not repeat itself."""
+        topics = self.zoning.get("trivia_topics") or []
+        return {"topic": random.choice(topics) if topics else None, "avoid": list(self._asked)}
+
+    def _remember(self, text: str) -> None:
+        self._asked.append(text)
 
     async def _force_engage(self, data: dict[str, Any]) -> Alert | None:
         """Dashboard "Zone out (trivia)" button: always ask, whatever the gates say.
@@ -281,7 +293,12 @@ class EventRouter:
             log.warning("Engagement dependencies unavailable")
             return None
         item = await generate_engagement(
-            {"engagement": style, "region": None, "fallback_index": self._engagement_index},
+            {
+                "engagement": style,
+                "region": None,
+                "fallback_index": self._engagement_index,
+                **self._variety(),
+            },
             self.writer.timeout_s,
         )
         if item is None:
@@ -305,6 +322,7 @@ class EventRouter:
         )
         if alert is not None:
             self._engagement_index += 1
+            self._remember(text)
             self._engagements.append(self.clock())
             log.info("zoning_out injected -> %s alert %s: %s", style, alert.alert_id, text)
         return alert

@@ -66,20 +66,37 @@ async def generate_engagement(ctx: dict, timeout_s: float = 2.0) -> dict | None:
     kind = "fact" if preference == "fact" else "trivia"
     region = ctx.get("region")
     region = region.strip()[:100] if isinstance(region, str) else ""
-    item = await _request(
-        "generate_engagement",
-        {"kind": kind, "region": region},
-        timeout_s,
-        2.0,
-        lambda output: _validate_engagement(output, kind),
-    )
+    topic = ctx.get("topic")
+    topic = topic.strip()[:60] if isinstance(topic, str) else ""
+    avoid = [q for q in ctx.get("avoid") or [] if isinstance(q, str)][-10:]
+    avoided = {_normalize(q) for q in avoid}
+
+    def validate(output: str) -> dict | None:
+        item = _validate_engagement(output, kind)
+        if item is not None and _normalize(item["text"]) in avoided:
+            return None  # the model repeated a recent question: use the bank instead
+        return item
+
+    payload: dict = {"kind": kind, "region": region}
+    if topic:
+        payload["topic"] = topic
+    if avoid:
+        payload["avoid"] = avoid
+    item = await _request("generate_engagement", payload, timeout_s, 2.0, validate)
     if item is not None:
         return item
     bank = trivia_bank()
     regional = [entry for entry in bank if region.casefold() in entry.get("regions", [])]
     candidates = regional or bank
     index = ctx.get("fallback_index", 0)
-    entry = candidates[(index if isinstance(index, int) else 0) % len(candidates)]
+    index = index if isinstance(index, int) else 0
+    # Next bank entry whose question was not asked recently.
+    for step in range(len(candidates)):
+        entry = candidates[(index + step) % len(candidates)]
+        if _normalize(entry["question"]) not in avoided and (
+            kind != "fact" or _normalize(fact_prompt(entry)) not in avoided
+        ):
+            break
     if kind == "fact":
         return {"kind": kind, "text": fact_prompt(entry), "answer": None}
     return {"kind": kind, "text": entry["question"], "answer": entry["accepted_answers"][0]}

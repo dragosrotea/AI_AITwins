@@ -345,3 +345,27 @@ def test_second_press_while_asking_does_not_stack() -> None:
     first = asyncio.run(r.router.handle(_envelope({"injected": True})))
     assert first is not None and r.am.active is first
     assert asyncio.run(r.router.handle(_envelope({"injected": True}))) is None
+
+
+def test_button_trivia_does_not_repeat_when_the_llm_always_says_france(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import json
+
+    from backend.llm import client
+
+    france = json.dumps(
+        {"kind": "trivia", "text": "What is the capital of France?", "answer": "Paris"}
+    )
+    llm = AsyncMock(return_value=france)
+    monkeypatch.setattr(client, "request_text", llm)
+    r = _limited_router()
+    asked = []
+    for _ in range(5):
+        alert = asyncio.run(r.router.handle(_envelope({"injected": True})))
+        assert alert is not None
+        asked.append(alert.text)
+        r.close_active()
+    assert len(set(asked)) == 5, asked  # France once, then the bank takes over
+    payload = json.loads(llm.call_args.args[0])
+    assert "What is the capital of France?" in payload["avoid"] and payload["topic"]
