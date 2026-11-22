@@ -36,7 +36,7 @@ async def run_sim(bus: Any, scenario: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--sim", action="store_true", required=True)
+    parser.add_argument("--sim", action="store_true", help="the only mode (no live maps yet)")
     parser.add_argument("--scenario", choices=("cycle", "low", "medium", "high"), default="cycle")
     args = parser.parse_args()
 
