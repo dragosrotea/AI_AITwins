@@ -486,8 +486,20 @@ async def run_live(bus: BusClient, cfg: dict[str, Any]) -> None:
     injector = attach_injector(bus, cfg)
     trips = load_trips(vehicle)
     if trips:
-        player = Player(trips, vehicle["default_trip"], vehicle["loop"])
+        player = Player(
+            trips, vehicle["default_trip"], vehicle["loop"], parked=vehicle["park_until_trip"]
+        )
         bus.subscribe(["control.replay"], checked("control.replay", player.control))
+
+        def on_trip(data: dict[str, Any]) -> None:
+            if not vehicle["park_until_trip"]:
+                return
+            if data["action"] == "start":
+                player.drive()
+            else:
+                player.park()
+
+        bus.subscribe(["control.trip"], checked("control.trip", on_trip))
 
         def next_sample() -> dict[str, Any]:
             sample = injector.apply(player.step())

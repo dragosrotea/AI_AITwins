@@ -136,3 +136,28 @@ def test_real_trips_look_like_driving() -> None:
     # T07: the drowsy and aggressive picks are the trips with braking beyond 0.4 g.
     assert trips["drowsy"].long_g.min() < -0.4
     assert trips["aggressive"].long_g.min() < -0.4
+
+
+# Parked until the trip starts (CI-06: the pre-trip form is locked above 5 km/h)
+
+
+def test_parked_player_stands_still_until_drive(tmp_path: Path) -> None:
+    player = make_player(tmp_path)
+    player.parked = True
+    for _ in range(5):
+        sample = player.step()
+        validate("vehicle.motion", sample)
+        assert sample["speed_kmh"] == 0.0 and sample["accel_mag_g"] == 0.0
+    assert player.index == 0
+    player.drive()
+    assert player.step()["speed_kmh"] > 5.0 and player.index == 1
+
+
+def test_park_on_trip_stop_and_replay_play_unparks(tmp_path: Path) -> None:
+    player = make_player(tmp_path)
+    for _ in range(3):
+        player.step()
+    player.park()
+    assert player.step()["speed_kmh"] == 0.0
+    player.control({"action": "play"})
+    assert not player.parked and player.index == 0  # a new drive starts from the trip start

@@ -16,6 +16,7 @@ core:
     default_trip: normal
     gps_lag_s: 0.75                # GPS speed drop trails braking peaks by ~0.75 s (docs/datasets.md)
     loop: true                     # restart the trip at its end
+    park_until_trip: true          # CI-06: stand at 0 km/h until control.trip start (demo step 2)
   alerts:
     llm_timeout_s: 2.0             # AL-05, NF-02
     t1_min_interval_s: 300         # AL-02: at most one T1 prompt per 5 min

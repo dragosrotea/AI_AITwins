@@ -117,7 +117,9 @@ def load_trips(cfg: dict[str, Any], root: Path = ROOT) -> dict[str, Trip]:
 class Player:
     """Replay position and controls. Call step() once per tick; it returns the next sample."""
 
-    def __init__(self, trips: dict[str, Trip], default_trip: str, loop: bool = True) -> None:
+    def __init__(
+        self, trips: dict[str, Trip], default_trip: str, loop: bool = True, parked: bool = False
+    ) -> None:
         if not trips:
             raise ValueError("no replay trips loaded")
         self.trips = trips
@@ -125,6 +127,9 @@ class Player:
         self.loop = loop
         self.index = 0
         self.playing = True
+        # Parked: the car stands at the trip's start at 0 km/h (so the pre-trip form, locked above
+        # 5 km/h by CI-06, can be filled) until drive(): a trip start or a replay play.
+        self.parked = parked
 
     @property
     def position_s(self) -> float:
@@ -134,6 +139,9 @@ class Player:
         """Current sample; advances one step while playing. Paused, it repeats the same sample
         with speed and acceleration held, so the chart keeps scrolling at 10 Hz."""
         sample = self.trip.sample(self.index)
+        if self.parked:
+            return {**sample, "accel_long_g": 0.0, "accel_lat_g": 0.0, "accel_mag_g": 0.0,
+                    "speed_kmh": 0.0}  # fmt: skip
         if self.playing:
             if self.index + 1 < len(self.trip):
                 self.index += 1
@@ -142,6 +150,18 @@ class Player:
             else:
                 self.playing = False
         return sample
+
+    def drive(self) -> None:
+        """Leave the parking spot: play the trip from its start (control.trip start)."""
+        if self.parked:
+            self.parked, self.index = False, 0
+            log.info("replay: trip %s starts driving", self.trip.name)
+        self.playing = True
+
+    def park(self) -> None:
+        """Stop at 0 km/h until the next drive() (control.trip stop)."""
+        self.parked = True
+        log.info("replay: parked")
 
     def seek(self, seconds: float) -> None:
         seconds = min(max(seconds, 0.0), self.trip.duration_s)
@@ -161,7 +181,7 @@ class Player:
                 self.index = 0
         action = data.get("action")
         if action == "play":
-            self.playing = True
+            self.drive()
         elif action == "pause":
             self.playing = False
         elif action == "seek":

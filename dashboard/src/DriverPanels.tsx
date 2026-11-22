@@ -161,7 +161,7 @@ export function PreTripForm() {
   }
 
   function stopTrip() {
-    if (isMoving) return
+    // Allowed while moving: core parks the replay car on trip stop (setup stays locked, CI-06).
     if (!bus.publish('control.trip', { action: 'stop' })) {
       setMessage({ text: 'Could not send trip stop. Check the broker connection and try again.', kind: 'error' })
       return
@@ -184,7 +184,7 @@ export function PreTripForm() {
       {tripActive ? (
         <div className="pretrip-active" role="status">
           <span>Trip is active. Trip setup is locked until you stop the trip.</span>
-          <button type="button" className="pretrip-stop" onClick={stopTrip} disabled={isMoving}>Stop trip</button>
+          <button type="button" className="pretrip-stop" onClick={stopTrip}>Stop trip</button>
         </div>
       ) : (
         <form
