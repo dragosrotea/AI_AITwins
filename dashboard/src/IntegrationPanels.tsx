@@ -163,6 +163,27 @@ export function CheckinSchedulePanel() {
   )
 }
 
+export function TripSummaryPanel() {
+  useBusRefresh(500)
+  const summary = bus.getLatest('trip.summary') as TopicEnvelope<'trip.summary'> | undefined
+  if (!summary) return null
+
+  return (
+    <section className="panel-placeholder copilot-summary-panel" aria-label="Trip summary" aria-live="polite">
+      <div className="summary-heading">
+        <div>
+          <p className="panel-label">TRIP SUMMARY</p>
+          <p className="telemetry-detail">Generated at trip end</p>
+        </div>
+        <time dateTime={new Date(summary.ts * 1000).toISOString()}>
+          {new Date(summary.ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        </time>
+      </div>
+      <p className="summary-text">{summary.data.text}</p>
+    </section>
+  )
+}
+
 export function RoadContextPanel() {
   useBusRefresh(500)
   const now = Date.now() / 1000
