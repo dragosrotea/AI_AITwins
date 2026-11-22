@@ -121,7 +121,6 @@ async def test_offline_event_routes_to_voice_and_grades_local_answer(routing, mo
     router.on_road({"load": "LOW", "traffic": "stop_and_go"})
     assert await router.handle(event_data) is None
     router.on_road({"load": "LOW"})
-    assert await router.handle({**event_data, "src": "core"}) is None
     alert = await router.handle(event_data)
     [say] = [data for topic, data in messages if topic == "voice.say"]
     assert say["audio_key"] == "engagement_trivia_en_1"

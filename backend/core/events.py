@@ -145,6 +145,9 @@ class EventRouter:
         source = envelope.get("src")
         sources = {"cv": self.routing["tiers"], "core": self.routing["fusion_tiers"]}
         is_engagement = kind == "zoning_out" and source in ("cv", "core")
+        # Dashboard demo button (control.inject zoning_out): the presenter asked for it now, so
+        # AL-02 rate limits and cooldowns do not apply; opt-in, road hold and ZO-05 still do.
+        injected = source == "core" and bool(data.get("signals", {}).get("injected"))
         tier = "T1" if is_engagement else sources.get(source, {}).get(kind)
         if tier is None or (not is_engagement and kind not in TEMPLATES):
             if source == "cv":
@@ -170,14 +173,14 @@ class EventRouter:
             kind, is_engagement = "break_due", False
         if kind in self._wording or any(a.type == kind for a in self.manager.pending()):
             return None  # one alert per type at a time
-        reason = self.manager.blocked(kind, tier)
+        reason = None if injected else self.manager.blocked(kind, tier)
         if reason is not None:  # AL-02: logged, not spoken, and no LLM call spent on it
             self.manager.suppressed(kind, tier, reason)
             return None
         self._wording.add(kind)
         try:
             if is_engagement:
-                return await self._engage(data)
+                return await self._engage(data, bypass_limits=injected)
             signals_in = data.get("signals", {})
             firm = bool(signals_in.get("firm"))  # RR-05: score >= 85
             ctx = {"event_type": kind, "tier": tier, "signals": signals_in, "firm": firm}
@@ -206,6 +209,7 @@ class EventRouter:
             signals=signals,
             lang=wording.lang,
             audio_key=wording.audio_key,
+            bypass_limits=injected,
         )
         if alert is not None and kind == "zoning_out":
             self._engagements.append(self.clock())
@@ -220,7 +224,7 @@ class EventRouter:
             )
         return alert
 
-    async def _engage(self, data: dict[str, Any]) -> Alert | None:
+    async def _engage(self, data: dict[str, Any], bypass_limits: bool = False) -> Alert | None:
         try:
             from backend.llm import generate_engagement
             from backend.llm.engagement import engagement_audio_key
@@ -247,6 +251,7 @@ class EventRouter:
             signals={"event_id": data["event_id"], "score": data["score"]},
             lang="en",
             audio_key=engagement_audio_key(text),
+            bypass_limits=bypass_limits,
             engagement_answer=item["answer"],
         )
         if alert is not None:

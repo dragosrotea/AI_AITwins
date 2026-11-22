@@ -250,3 +250,68 @@ def test_feedback_is_not_held_by_rate_limits() -> None:
         }
     )
     assert asyncio.run(rig.router.answer_feedback(alert, {"transcript": "Paris"})) is not None
+
+
+# Demo trigger: control.inject zoning_out (dashboard "Zone out (trivia)" button)
+
+
+def test_injected_zoning_out_needs_no_signals_and_becomes_trivia(router: Router) -> None:
+    f = Fusion()
+    f.z.inject()  # no driving, no stare: the button alone raises the event
+    [event] = f.events
+    assert event["type"] == "zoning_out" and event["signals"] == {"injected": True}
+    envelope = {"topic": "detector.event", "ts": 1.0, "src": "core", "data": event}
+    alert = asyncio.run(router.router.handle(envelope))
+    assert alert is not None and alert.engagement_answer
+
+
+def test_injected_zoning_out_respects_the_pretrip_opt_in(router: Router) -> None:
+    router.router.on_trip({"action": "start", "pretrip": {"engagement": "quiet"}})
+    f = Fusion()
+    f.z.inject()
+    envelope = {"topic": "detector.event", "ts": 1.0, "src": "core", "data": f.events[0]}
+    assert asyncio.run(router.router.handle(envelope)) is None
+
+
+def test_vehicle_injector_ignores_zoning_out() -> None:
+    from backend.core.vehicle import Injector
+
+    injector = Injector(CORE["inject"], clock=lambda: 0.0)
+    injector.inject("zoning_out")
+    sample = {"accel_long_g": 0.1, "accel_lat_g": 0.0, "speed_kmh": 90.0}
+    assert injector.apply(sample)["accel_long_g"] == 0.1 and not injector.crashed
+    validate("control.inject", {"event": "zoning_out"})
+
+
+def _limited_router() -> Router:
+    """A router with the real (default-profile) AL-02 limits and cooldowns."""
+    r = Router()
+    r.am = AlertManager(CORE["alerts"], r.publish, clock=lambda: r.now)
+    writer = AlertWriter(2.0, TEMPLATES, generate=no_llm)
+    r.router = EventRouter(r.am, CORE["routing"], writer, ZONING, clock=lambda: r.now)
+    r.router.on_trip({"action": "start", "pretrip": {"engagement": "trivia"}})
+    return r
+
+
+def _envelope(signals: dict[str, Any]) -> dict[str, Any]:
+    data = {"event_id": "z", "type": "zoning_out", "tier": "T1", "score": 100.0}
+    return {
+        "topic": "detector.event",
+        "ts": 1.0,
+        "src": "core",
+        "data": {**data, "signals": signals},
+    }
+
+
+def test_injected_zoning_out_skips_rate_limits_but_fused_one_does_not() -> None:
+    r = _limited_router()
+    assert asyncio.run(r.router.handle(_envelope({}))) is not None
+    r.close_active()
+    assert asyncio.run(r.router.handle(_envelope({}))) is None  # AL-02 / cooldown hold it
+    assert asyncio.run(r.router.handle(_envelope({"injected": True}))) is not None
+
+
+def test_injected_zoning_out_still_waits_for_a_calm_road() -> None:
+    r = _limited_router()
+    r.router.on_road({"load": "HIGH"})
+    assert asyncio.run(r.router.handle(_envelope({"injected": True}))) is None

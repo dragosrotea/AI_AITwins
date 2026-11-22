@@ -44,7 +44,7 @@ export interface ContextRoad {
 }
 
 export interface ControlInject {
-  "event": "harsh_brake" | "crash";
+  "event": "harsh_brake" | "crash" | "zoning_out";
 }
 
 export interface ControlMusic {

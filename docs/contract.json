@@ -474,7 +474,8 @@
         "event": {
           "enum": [
             "harsh_brake",
-            "crash"
+            "crash",
+            "zoning_out"
           ],
           "title": "Event",
           "type": "string"

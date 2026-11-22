@@ -48,7 +48,7 @@ export default function ReplayControls() {
     setFeedback(label)
   }
 
-  function sendInjector(event: 'harsh_brake' | 'crash') {
+  function sendInjector(event: 'harsh_brake' | 'crash' | 'zoning_out') {
     if (!bus.publish('control.inject', { event })) {
       setFeedback('Broker disconnected. Demo event was not sent.')
       return
@@ -58,6 +58,8 @@ export default function ReplayControls() {
       setCrashWasMoving(false)
       setCrashStopped(false)
       setFeedback('Crash simulation sent. Waiting for the replay to stop…')
+    } else if (event === 'zoning_out') {
+      setFeedback('Zone-out injected. Trivia needs the pre-trip opt-in and a calm road.')
     } else {
       setFeedback('Harsh-brake event sent to the core.')
     }
@@ -121,9 +123,8 @@ export default function ReplayControls() {
           <button type="button" className="inject-button-danger" onClick={() => sendInjector('crash')} disabled={!connected || crashRequested}>
             Simulate crash
           </button>
-          {/* TODO(core): enable only after ControlInject and the core handler expose a trivia demo event. */}
-          <button type="button" className="inject-button-secondary" disabled title="Waiting for a core-supported trivia trigger">
-            Trivia (hook pending)
+          <button type="button" className="inject-button-secondary" onClick={() => sendInjector('zoning_out')} disabled={!connected || crashRequested} title="Raise a zoning-out event: core asks a trivia question">
+            Zone out (trivia)
           </button>
         </div>
       </div>

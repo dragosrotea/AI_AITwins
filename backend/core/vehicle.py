@@ -201,6 +201,8 @@ class Injector:
             self.brake_until = now + self.cfg["harsh_brake_s"]
         elif event == "crash":
             self.crash_at, self.impact = now, None
+        else:
+            return  # not a vehicle event (zoning_out is handled by the zoning fusion)
         log.info("inject %s", event)
 
     def clear(self) -> None:

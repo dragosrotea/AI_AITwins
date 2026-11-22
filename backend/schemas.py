@@ -248,7 +248,7 @@ class ControlReplay(Model):
 class ControlInject(Model):
     """control.inject, on event."""
 
-    event: Literal["harsh_brake", "crash"]
+    event: Literal["harsh_brake", "crash", "zoning_out"]  # zoning_out: demo trivia trigger
 
 
 # Topic registry

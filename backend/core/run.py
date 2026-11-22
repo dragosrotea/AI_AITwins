@@ -460,6 +460,12 @@ def attach_zoning(bus: BusClient, cfg: dict[str, Any]) -> ZoningFusion:
     on_state = checked("driver.state", lambda d: zoning.on_driver_state(d, time.monotonic()))
     bus.subscribe(["driver.state"], on_state)
     bus.subscribe(["context.road"], checked("context.road", zoning.on_road))
+
+    def on_inject(data: dict[str, Any]) -> None:
+        if data["event"] == "zoning_out":
+            zoning.inject()
+
+    bus.subscribe(["control.inject"], checked("control.inject", on_inject))
     return zoning
 
 

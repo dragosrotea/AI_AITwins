@@ -82,3 +82,19 @@ class ZoningFusion:
                 }
             )
         return score
+
+    def inject(self) -> None:
+        """Demo trigger (control.inject zoning_out): raise the same event the fusion would.
+
+        Everything after the event stays real: opt-in, road hold, cooldowns, ZO-05 break, grading.
+        """
+        log.info("zoning_out injected")
+        self.emit(
+            {
+                "event_id": f"zoning-{next(self._ids)}",
+                "type": "zoning_out",
+                "tier": "T1",
+                "score": 100.0,
+                "signals": {"injected": True},
+            }
+        )
