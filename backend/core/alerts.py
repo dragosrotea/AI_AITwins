@@ -106,6 +106,7 @@ class Alert:
     engagement_answer: str | None = None
     alarm_rounds: int = 0  # VR-05: continuous alarm after a T3 miss
     countdown_until: float | None = None  # CR-02: emergency when this passes unanswered
+    forced: bool = False  # demo button: not held on a busy road (AL-03)
 
 
 def _noop(alert: Alert, reply: dict[str, Any] | None) -> None:
@@ -159,6 +160,7 @@ class AlertManager:
         audio_key: str | None = None,
         bypass_limits: bool = False,
         engagement_answer: str | None = None,
+        forced: bool = False,
     ) -> Alert | None:
         """Queue an alert. Returns None if one of the same type is already queued or active,
         or a rate limit holds it back (AL-02). bypass_limits is for answers to the driver
@@ -178,6 +180,7 @@ class AlertManager:
             self._last_t1 = now
         alert = Alert(type, tier, text, lang or self.lang, short_text, signals or {}, audio_key)
         alert.engagement_answer = engagement_answer
+        alert.forced = forced
         alert.seq = next(self._seq)
         alert.base_tier = tier
         if self.on_submit is not None:
@@ -306,7 +309,7 @@ class AlertManager:
         self._publish_state(alert)
 
     def _held(self, alert: Alert) -> bool:
-        return self.road_high and alert.tier == "T1"
+        return self.road_high and alert.tier == "T1" and not alert.forced
 
     def _start_next(self) -> None:
         ready = [a for a in self.queue if not self._held(a)]  # the queue is sorted by tier

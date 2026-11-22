@@ -265,12 +265,13 @@ def test_injected_zoning_out_needs_no_signals_and_becomes_trivia(router: Router)
     assert alert is not None and alert.engagement_answer
 
 
-def test_injected_zoning_out_respects_the_pretrip_opt_in(router: Router) -> None:
+def test_injected_zoning_out_asks_even_for_a_quiet_driver(router: Router) -> None:
     router.router.on_trip({"action": "start", "pretrip": {"engagement": "quiet"}})
     f = Fusion()
     f.z.inject()
     envelope = {"topic": "detector.event", "ts": 1.0, "src": "core", "data": f.events[0]}
-    assert asyncio.run(router.router.handle(envelope)) is None
+    alert = asyncio.run(router.router.handle(envelope))
+    assert alert is not None and alert.engagement_answer  # the button forces trivia
 
 
 def test_vehicle_injector_ignores_zoning_out() -> None:
@@ -311,7 +312,36 @@ def test_injected_zoning_out_skips_rate_limits_but_fused_one_does_not() -> None:
     assert asyncio.run(r.router.handle(_envelope({"injected": True}))) is not None
 
 
-def test_injected_zoning_out_still_waits_for_a_calm_road() -> None:
+def test_injected_zoning_out_is_asked_on_a_busy_road() -> None:
     r = _limited_router()
     r.router.on_road({"load": "HIGH"})
+    r.am.on_road({"load": "HIGH"})
+    alert = asyncio.run(r.router.handle(_envelope({"injected": True})))
+    assert alert is not None and r.am.active is alert  # spoken now, not held
+
+
+def test_injected_zoning_out_keeps_asking_past_zo05_and_after_trip_stop() -> None:
+    r = _limited_router()
+    for _ in range(ZONING["max_engagements"] + 2):
+        alert = asyncio.run(r.router.handle(_envelope({"injected": True})))
+        assert alert is not None and alert.type == "zoning_out" and alert.engagement_answer
+        r.close_active()
+    r.router.on_trip({"action": "stop"})
+    assert asyncio.run(r.router.handle(_envelope({"injected": True}))) is not None
+
+
+def test_injected_zoning_out_queues_behind_another_alert() -> None:
+    r = _limited_router()
+    other = r.am.submit("distraction", "T2", "Eyes on the road.")
+    assert other is not None and r.am.active is other
+    alert = asyncio.run(r.router.handle(_envelope({"injected": True})))
+    assert alert is not None and alert in r.am.queue  # waits, then plays
+    r.close_active()
+    assert r.am.active is alert
+
+
+def test_second_press_while_asking_does_not_stack() -> None:
+    r = _limited_router()
+    first = asyncio.run(r.router.handle(_envelope({"injected": True})))
+    assert first is not None and r.am.active is first
     assert asyncio.run(r.router.handle(_envelope({"injected": True}))) is None

@@ -149,6 +149,8 @@ class EventRouter:
         # AL-02 rate limits and cooldowns do not apply; opt-in, road hold and ZO-05 still do.
         injected = source == "core" and bool(data.get("signals", {}).get("injected"))
         tier = "T1" if is_engagement else sources.get(source, {}).get(kind)
+        if injected and kind == "zoning_out":
+            return await self._force_engage(data)
         if tier is None or (not is_engagement and kind not in TEMPLATES):
             if source == "cv":
                 log.info("detector.event %s from cv: no route, skipped", kind)
@@ -257,6 +259,54 @@ class EventRouter:
         if alert is not None:
             self._engagement_index += 1
             self._engagements.append(self.clock())
+        return alert
+
+    async def _force_engage(self, data: dict[str, Any]) -> Alert | None:
+        """Dashboard "Zone out (trivia)" button: always ask, whatever the gates say.
+
+        Skips the pre-trip opt-in (trivia if the driver chose quiet or no trip runs), the busy
+        road hold, ZO-05's break and AL-02 limits. An older queued trivia is replaced; another
+        alert in progress is not cut off, the question queues behind it (a T3 still goes first).
+        """
+        active = self.manager.active
+        if active is not None and active.type == "zoning_out":
+            log.info("zoning_out injected: a trivia question is already being asked")
+            return None
+        self.manager.cancel_queued(["zoning_out"])
+        style = self.engagement if self.engagement in ("trivia", "fact") else "trivia"
+        try:
+            from backend.llm import generate_engagement
+            from backend.llm.engagement import engagement_audio_key
+        except ImportError:
+            log.warning("Engagement dependencies unavailable")
+            return None
+        item = await generate_engagement(
+            {"engagement": style, "region": None, "fallback_index": self._engagement_index},
+            self.writer.timeout_s,
+        )
+        if item is None:
+            log.warning("zoning_out injected: no trivia item (LLM and offline list failed)")
+            return None
+        self.manager.cancel_queued(["zoning_out"])  # one may have been queued while we waited
+        if self.manager.active is not None and self.manager.active.type == "zoning_out":
+            return None
+        text = item["text"]
+        alert = self.manager.submit(
+            "zoning_out",
+            "T1",
+            text,
+            short_text=text,
+            signals={"event_id": data["event_id"], "score": data["score"], "injected": True},
+            lang="en",
+            audio_key=engagement_audio_key(text),
+            bypass_limits=True,
+            engagement_answer=item["answer"],
+            forced=True,
+        )
+        if alert is not None:
+            self._engagement_index += 1
+            self._engagements.append(self.clock())
+            log.info("zoning_out injected -> %s alert %s: %s", style, alert.alert_id, text)
         return alert
 
     def _too_many_engagements(self) -> bool:
