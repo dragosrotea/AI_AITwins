@@ -10,7 +10,7 @@ const tracks = Object.entries(
   }),
 ).map(([path, src]) => ({
   src,
-  title: path.split('/').at(-1)?.replace(/\.mp3$/i, '') ?? 'DriveMate track',
+  title: path.split('/').at(-1)?.replace(/\.mp3$/i, '') ?? 'S.A.M. track',
 }))
 
 function isControlMusic(value: unknown): value is ControlMusic {

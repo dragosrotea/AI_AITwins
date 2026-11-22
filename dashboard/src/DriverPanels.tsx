@@ -74,7 +74,7 @@ export function DriverStatusPanel() {
   const voiceIsActive = voiceStatus?.state === 'speaking' || voiceStatus?.state === 'listening'
   const voiceMatchesAlert = !alert || !voiceStatus?.alert_id || voiceStatus.alert_id === alert.data.alert_id
   const sayMatchesVoice = Boolean(voiceIsActive && voiceMatchesAlert && (!voiceStatus?.alert_id || say?.data.alert_id === voiceStatus.alert_id))
-  const spokenText = alert?.data.text || (sayMatchesVoice ? say?.data.text : undefined) || 'DriveMate is monitoring your drive.'
+  const spokenText = alert?.data.text || (sayMatchesVoice ? say?.data.text : undefined) || 'S.A.M. is monitoring your drive.'
   const isSpeaking = voiceStatus?.state === 'speaking' && voiceMatchesAlert
   const voiceActivity = voiceMatchesAlert && voiceIsActive ? voiceStatus?.state : undefined
   const schedule = latest('checkin.schedule')?.data as CheckinSchedule | undefined
@@ -88,7 +88,7 @@ export function DriverStatusPanel() {
           <span className="driver-status-indicator" aria-hidden="true" />
           <span>{statusLabel}</span>
           {voiceActivity && (
-            <span className={`driver-voice-indicator${isSpeaking ? ' driver-voice-indicator--speaking' : ''}`} role="status" aria-label={isSpeaking ? 'DriveMate is speaking' : 'DriveMate is listening'}>
+            <span className={`driver-voice-indicator${isSpeaking ? ' driver-voice-indicator--speaking' : ''}`} role="status" aria-label={isSpeaking ? 'S.A.M. is speaking' : 'S.A.M. is listening'}>
               <span className="driver-voice-wave" aria-hidden="true"><i /><i /><i /></span>
               {isSpeaking ? 'Speaking' : 'Listening'}
             </span>

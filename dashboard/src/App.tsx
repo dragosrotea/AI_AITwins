@@ -46,7 +46,7 @@ function DriverLayout() {
       <div className="page-heading">
         <div>
           <p className="eyebrow">DRIVER VIEW</p>
-          <h2 id="driver-page-title">DriveMate</h2>
+          <h2 id="driver-page-title">S.A.M.</h2>
         </div>
       </div>
       <div className="driver-panels">
@@ -121,7 +121,7 @@ export default function App() {
         </div>
         <div className="brand-copy">
           <p className="eyebrow">DRIVER SAFETY COPILOT</p>
-          <h1>DriveMate</h1>
+          <h1>S.A.M.</h1>
         </div>
         {route !== '/driver' && (
           <nav className="route-nav" aria-label="Dashboard views">
@@ -136,7 +136,7 @@ export default function App() {
         </div>
       </header>
       {page}
-      <footer>DriveMate <span>·</span> Safety support for every drive</footer>
+      <footer>S.A.M. <span>·</span> Safety support for every drive</footer>
     </div>
   )
 }
