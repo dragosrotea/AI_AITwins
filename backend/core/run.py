@@ -80,6 +80,7 @@ class FakeCore:
         self.fake = cfg["core"]["fake"]
         self.alerts = cfg["core"]["alerts"]
         self.checkin = cfg["core"]["checkin"]
+        self.cfg_rage = cfg["core"]["rage"]
         self.rate_hz = cfg["core"]["vehicle"]["rate_hz"]
         self.injector = attach_injector(bus, cfg)
         self.triplog = attach_triplog(bus, cfg)
@@ -97,6 +98,7 @@ class FakeCore:
         log.info("core --fake connected to %s", self.bus.url)
         async with asyncio.TaskGroup() as tasks:
             tasks.create_task(self.vehicle_loop())
+            tasks.create_task(self.rage_loop())
             tasks.create_task(self.alert_loop())
 
     async def vehicle_loop(self) -> None:
@@ -107,6 +109,25 @@ class FakeCore:
             self.rate_hz,
             lambda: self.injector.apply(vehicle_sample(time.monotonic() - started, speed)),
         )
+
+    async def rage_loop(self) -> None:
+        """Synthetic rage.score: a slow rise and fall, with face and voice agreeing near the top."""
+        rage = self.cfg_rage
+        started = time.monotonic()
+
+        def sample() -> dict[str, Any]:
+            level = 0.5 - 0.5 * math.cos((time.monotonic() - started) / 20.0)
+            agreeing = ["face", "voice"] if level > 0.8 else []
+            return {
+                "score": round(70 * level, 1),
+                "face": round(level, 2),
+                "voice": round(level * 0.9, 2),
+                "driving": 0.0,
+                "agreeing": agreeing,
+                "trigger_score": float(rage["trigger_score"]),
+            }
+
+        await publish_at_rate(self.bus, rage["publish_hz"], sample, "rage.score")
 
     async def publish_schedule(self) -> None:
         interval = self.checkin["base_interval_min"]
@@ -199,12 +220,14 @@ def attach_injector(bus: BusClient, cfg: dict[str, Any]) -> Injector:
     return injector
 
 
-async def publish_at_rate(bus: BusClient, rate_hz: float, next_sample: Any) -> None:
-    """Publish next_sample() on vehicle.motion at rate_hz without drifting."""
+async def publish_at_rate(
+    bus: BusClient, rate_hz: float, next_sample: Any, topic: str = "vehicle.motion"
+) -> None:
+    """Publish next_sample() on topic at rate_hz without drifting."""
     period = 1.0 / rate_hz
     next_tick = time.monotonic()
     while True:
-        await bus.publish("vehicle.motion", next_sample())
+        await bus.publish(topic, next_sample())
         next_tick += period
         await asyncio.sleep(max(0.0, next_tick - time.monotonic()))
 
@@ -523,6 +546,12 @@ async def run_live(bus: BusClient, cfg: dict[str, Any]) -> None:
     log.info("core live connected to %s", bus.url)
     async with asyncio.TaskGroup() as tasks:
         tasks.create_task(publish_at_rate(bus, vehicle["rate_hz"], next_sample))
+        rage = cfg["core"]["rage"]
+        tasks.create_task(
+            publish_at_rate(
+                bus, rage["publish_hz"], lambda: fusion.snapshot(time.monotonic()), "rage.score"
+            )
+        )
         tasks.create_task(tick_loop(alerts))
         tasks.create_task(checkin_loop(checkins))
 

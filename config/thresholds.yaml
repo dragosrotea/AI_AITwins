@@ -43,6 +43,7 @@ core:
       road_rage: 180               # RR-07
   rage:
     trigger_score: 60              # RR-05
+    publish_hz: 2                  # rage.score for the dashboard's rage meter
     firm_score: 85                 # RR-05: firmer message, suggest pulling over
     min_modalities: 2              # RR-05: 2 of 3 (face, voice, driving) must agree
     face_alone_s: 5                # RR-05

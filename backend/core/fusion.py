@@ -165,6 +165,20 @@ class RageFusion:
             triggers=two_agree or face_alone,
         )
 
+    def snapshot(self, now: float) -> dict[str, Any]:
+        """rage.score data: the live reading for the dashboard."""
+        r = self.reading(now)
+        return {
+            "score": r.score,
+            "face": r.face,
+            "voice": r.voice,
+            "driving": r.driving,
+            "agreeing": r.agreeing,
+            "hr_stress": r.hr_stress,
+            "music_rise": r.music_rise,
+            "trigger_score": float(self.cfg["trigger_score"]),
+        }
+
     def evaluate(self, now: float) -> RageReading:
         reading = self.reading(now)
         if not reading.triggers:

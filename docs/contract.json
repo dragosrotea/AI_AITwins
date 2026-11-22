@@ -116,6 +116,15 @@
       ],
       "rate_hz": null
     },
+    "rage.score": {
+      "model": {
+        "$ref": "#/$defs/RageScore"
+      },
+      "producers": [
+        "core"
+      ],
+      "rate_hz": 2.0
+    },
     "music.volume": {
       "model": {
         "$ref": "#/$defs/MusicVolume"
@@ -891,6 +900,72 @@
         "resting_hr"
       ],
       "title": "Pretrip",
+      "type": "object"
+    },
+    "RageScore": {
+      "additionalProperties": false,
+      "description": "rage.score, 2 Hz. Core's live Rage Score (RR-05) so the dashboard shows the real value.",
+      "properties": {
+        "score": {
+          "maximum": 100.0,
+          "minimum": 0.0,
+          "title": "Score",
+          "type": "number"
+        },
+        "face": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Face",
+          "type": "number"
+        },
+        "voice": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Voice",
+          "type": "number"
+        },
+        "driving": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Driving",
+          "type": "number"
+        },
+        "agreeing": {
+          "items": {
+            "enum": [
+              "face",
+              "voice",
+              "driving"
+            ],
+            "type": "string"
+          },
+          "title": "Agreeing",
+          "type": "array"
+        },
+        "hr_stress": {
+          "default": false,
+          "title": "Hr Stress",
+          "type": "boolean"
+        },
+        "music_rise": {
+          "default": false,
+          "title": "Music Rise",
+          "type": "boolean"
+        },
+        "trigger_score": {
+          "description": "score at which road_rage fires (with 2 agreeing)",
+          "title": "Trigger Score",
+          "type": "number"
+        }
+      },
+      "required": [
+        "score",
+        "face",
+        "voice",
+        "driving",
+        "trigger_score"
+      ],
+      "title": "RageScore",
       "type": "object"
     },
     "TripSummary": {

@@ -61,7 +61,7 @@ export default function ReplayControls() {
     } else if (event === 'zoning_out') {
       setFeedback('Zone-out injected. Trivia needs the pre-trip opt-in and a calm road.')
     } else {
-      setFeedback('Harsh-brake event sent to the core.')
+      setFeedback('Harsh brake injected: a −0.6 g dip on the chart; it counts as driving in the rage score for 60 s.')
     }
   }
 

@@ -442,3 +442,5 @@ footer span { padding: 0 5px; color: var(--primary); }
   .music-volume-meter { width: 48px; }
   .crash-resume-state { align-items: flex-start; flex-direction: column; }
 }
+.rage-breakdown { margin: -2px 0 2px; font: 500 10px 'DM Sans', sans-serif; color: var(--text-secondary); }
+.rage-part--on { color: #b12b28; font-weight: 700; }

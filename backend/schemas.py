@@ -182,6 +182,19 @@ class CheckinSchedule(Model):
     next_break_ts: float | None = None
 
 
+class RageScore(Model):
+    """rage.score, 2 Hz. Core's live Rage Score (RR-05) so the dashboard shows the real value."""
+
+    score: float = Field(ge=0.0, le=100.0)
+    face: float = Field(ge=0.0, le=1.0)
+    voice: float = Field(ge=0.0, le=1.0)
+    driving: float = Field(ge=0.0, le=1.0)
+    agreeing: list[Literal["face", "voice", "driving"]] = Field(default_factory=list)
+    hr_stress: bool = False
+    music_rise: bool = False
+    trigger_score: float = Field(description="score at which road_rage fires (with 2 agreeing)")
+
+
 class TripSummary(Model):
     """trip.summary, at trip end."""
 
@@ -273,6 +286,7 @@ TOPICS: dict[str, TopicSpec] = {
     "control.music": TopicSpec(model=ControlMusic, producers=("core",), rate_hz=None),
     "checkin.schedule": TopicSpec(model=CheckinSchedule, producers=("core",), rate_hz=None),
     "trip.summary": TopicSpec(model=TripSummary, producers=("core",), rate_hz=None),
+    "rage.score": TopicSpec(model=RageScore, producers=("core",), rate_hz=2),
     "music.volume": TopicSpec(model=MusicVolume, producers=("ui",), rate_hz=None),
     "bio.hr": TopicSpec(model=BioHR, producers=("hr", "ui"), rate_hz=1),
     "context.road": TopicSpec(model=ContextRoad, producers=("maps", "ui"), rate_hz=1),

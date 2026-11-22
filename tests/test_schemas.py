@@ -18,6 +18,7 @@ BRIEF_TOPICS = {
     "voice.status", "voice.reply", "alert.state", "vehicle.motion", "control.music",
     "music.volume", "bio.hr", "context.road", "checkin.schedule", "control.trip",
     "control.replay", "control.inject", "trip.summary",
+    "rage.score",  # added 22 Nov: core's live Rage Score for the dashboard meter
 }  # fmt: skip
 
 DRIVER_STATE = {  # exactly what CV's --fake publishes (cv/cp0 state_dict)
@@ -67,6 +68,8 @@ EXAMPLES = {
     "control.replay": {"action": "seek", "trip": "motorway_normal", "segment": 120},
     "control.inject": {"event": "crash"},
     "trip.summary": {"text": "Calm drive, one break.", "stats": {"alerts": 3}},
+    "rage.score": {"score": 65.0, "face": 1.0, "voice": 0.7, "driving": 0.0,
+                   "agreeing": ["face", "voice"], "trigger_score": 60},
 }  # fmt: skip
 
 

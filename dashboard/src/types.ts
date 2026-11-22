@@ -110,6 +110,17 @@ export interface Pretrip {
   "resting_hr": number;
 }
 
+export interface RageScore {
+  "score": number;
+  "face": number;
+  "voice": number;
+  "driving": number;
+  "agreeing"?: Array<"face" | "voice" | "driving">;
+  "hr_stress"?: boolean;
+  "music_rise"?: boolean;
+  "trigger_score": number;
+}
+
 export interface TripSummary {
   "text": string;
   "stats"?: Record<string, unknown>;
@@ -161,6 +172,7 @@ export const TOPICS = [
   "control.music",
   "checkin.schedule",
   "trip.summary",
+  "rage.score",
   "music.volume",
   "bio.hr",
   "context.road",
@@ -183,6 +195,7 @@ export interface TopicDataMap {
   "control.music": ControlMusic;
   "checkin.schedule": CheckinSchedule;
   "trip.summary": TripSummary;
+  "rage.score": RageScore;
   "music.volume": MusicVolume;
   "bio.hr": BioHR;
   "context.road": ContextRoad;

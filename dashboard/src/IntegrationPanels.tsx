@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { bus, type SeriesPoint } from './bus'
-import type { AudioFeatures, BioHR, CheckinSchedule, ControlTrip, DriverState, TopicEnvelope } from './types'
+import type { BioHR, CheckinSchedule, ControlTrip, DriverState, RageScore, TopicEnvelope } from './types'
 
 const ATTENTION = {
   weights: { drowsiness: 0.35, distraction: 0.3, rage: 0.2, zoning: 0.15 },
@@ -35,7 +35,7 @@ function useBusRefresh(periodMs = 150) {
   }, [periodMs])
 }
 
-function latest<K extends 'driver.state' | 'audio.features' | 'music.volume' | 'bio.hr' | 'control.trip' | 'checkin.schedule' | 'context.road'>(topic: K) {
+function latest<K extends 'driver.state' | 'audio.features' | 'rage.score' | 'music.volume' | 'bio.hr' | 'control.trip' | 'checkin.schedule' | 'context.road'>(topic: K) {
   return bus.getLatest(topic) as TopicEnvelope<K> | undefined
 }
 
@@ -43,7 +43,9 @@ function clamp01(value: number) {
   return Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0))
 }
 
-function attentionParts(driver: DriverState, audio?: AudioFeatures) {
+// Rage comes from core's fusion (rage.score): the same score that triggers road_rage (RR-05),
+// so the meter matches what DriveMate does. Without a fresh reading the meter shows 0.
+function attentionParts(driver: DriverState, rageScore?: RageScore) {
   const drowsiness = Math.max(
     driver.eye_closed_p,
     driver.eyes_closed_ms >= 1000 ? 1 : 0,
@@ -57,12 +59,7 @@ function attentionParts(driver: DriverState, audio?: AudioFeatures) {
     driver.gaze_dispersion_30s / ATTENTION.gazeDispersionFullRiskDeg,
     driver.phone_in_hand ? 1 : 0,
   )
-  const rage = Math.max(
-    driver.anger_p,
-    audio?.anger_voice_p ?? 0,
-    audio?.shouting ? 0.75 : 0,
-    Math.min(1, (audio?.swear_count_60s ?? 0) / 3),
-  )
+  const rage = (rageScore?.score ?? 0) / 100
   const zoning = driver.zoning_visual_p
   const risks = { drowsiness, distraction, rage, zoning }
   const weightedRisk = Object.entries(ATTENTION.weights).reduce(
@@ -82,13 +79,28 @@ function RiskMeter({ label, risk }: { label: string; risk: number }) {
   )
 }
 
+function RageBreakdown({ rage }: { rage: RageScore }) {
+  const part = (name: 'face' | 'voice' | 'driving', value: number) => (
+    <span className={(rage.agreeing ?? []).includes(name) ? 'rage-part rage-part--on' : 'rage-part'}>
+      {name} {Math.round(value * 100)}
+    </span>
+  )
+  return (
+    <p className="rage-breakdown" aria-label="Rage score parts">
+      {part('face', rage.face)} · {part('voice', rage.voice)} · {part('driving', rage.driving)}
+      {rage.hr_stress && ' · HR stress'}{rage.music_rise && ' · music up'}
+      {' · fires at '}{rage.trigger_score} with 2 agreeing
+    </p>
+  )
+}
+
 export function AttentionPanel() {
   useBusRefresh(150)
   const now = Date.now() / 1000
   const driverMessage = latest('driver.state')
   const driver = driverMessage?.data
-  const audioMessage = latest('audio.features')
-  const audio = audioMessage && now - audioMessage.ts <= 2 ? audioMessage.data : undefined
+  const rageMessage = latest('rage.score')
+  const rageScore = rageMessage && now - rageMessage.ts <= 2 ? rageMessage.data : undefined
   const currentVolume = latest('music.volume')?.data.volume
   const angerSeries: SeriesPoint[] = bus.getSeries('driver.state.anger_p')
   const volumeSeries: SeriesPoint[] = bus.getSeries('music.volume.volume')
@@ -103,7 +115,7 @@ export function AttentionPanel() {
   const lowEngagementCue = currentVolume !== undefined
     && currentVolume <= ATTENTION.musicLowVolume
     && zoningHigh
-  const parts = driver && freshDriver ? attentionParts(driver, audio) : undefined
+  const parts = driver && freshDriver ? attentionParts(driver, rageScore) : undefined
 
   return (
     <section className="panel-placeholder copilot-attention-panel" aria-label="Attention score and cues">
@@ -119,6 +131,7 @@ export function AttentionPanel() {
           <RiskMeter label="Drowsiness" risk={parts.risks.drowsiness} />
           <RiskMeter label="Distraction" risk={parts.risks.distraction} />
           <RiskMeter label="Rage" risk={parts.risks.rage} />
+          {rageScore && <RageBreakdown rage={rageScore} />}
           <RiskMeter label="Zoning out" risk={parts.risks.zoning} />
         </div>
       ) : (

@@ -11,7 +11,12 @@ ROAD_STATES = (
     {"load": "LOW", "traffic": "Free flow", "next_maneuver": "Continue straight", "dist_m": 900.0},
     {"load": "MEDIUM", "traffic": "Moderate", "next_maneuver": "Keep right", "dist_m": 350.0},
     {"load": "HIGH", "traffic": "Dense junction", "next_maneuver": "Turn left", "dist_m": 80.0},
-    {"load": "MEDIUM", "traffic": "Moderate", "next_maneuver": "Continue straight", "dist_m": 500.0},
+    {
+        "load": "MEDIUM",
+        "traffic": "Moderate",
+        "next_maneuver": "Continue straight",
+        "dist_m": 500.0,
+    },
 )
 
 

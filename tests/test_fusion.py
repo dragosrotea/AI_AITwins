@@ -198,3 +198,21 @@ def test_music_turned_up_adds_to_the_score(rig: Rig) -> None:
     rig.wait(5)
     rig.fusion.on_music({"volume": 30 + RAGE["music_rise"]}, rig.t)
     assert rig.fusion.reading(rig.t).music_rise
+
+
+# rage.score: the live reading the dashboard's rage meter shows
+
+
+def test_snapshot_shows_a_harsh_brake_as_driving_and_matches_the_contract(rig: Rig) -> None:
+    rig.wait(1)
+    calm = rig.fusion.snapshot(rig.t)
+    validate("rage.score", calm)
+    assert calm["driving"] == 0.0 and calm["agreeing"] == []
+    rig.drive(long_g=-0.6)  # the dashboard's Harsh brake injection
+    braked = rig.fusion.snapshot(rig.t)
+    validate("rage.score", braked)
+    assert braked["agreeing"] == ["driving"]
+    w = RAGE["weights"]
+    assert braked["score"] == pytest.approx(100 * (w["face"] * braked["face"] + w["driving"]))
+    assert braked["trigger_score"] == RAGE["trigger_score"]
+    assert not rig.events  # driving alone never fires road_rage
