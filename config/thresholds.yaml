@@ -197,7 +197,7 @@ cv:
     smoothing_alpha: 0.2
   activity_models:
     models_dir: models/trained
-    rate_hz: 5
+    rate_hz: 1                     # CPU: two MobileNets per sample; 5 Hz dropped driver.state to 3.6 Hz
     distraction_threshold: 0.5
     drowsiness_threshold: 0.65     # DD-03: model probability (raised 22 Nov: fewer false drowsiness alerts)
     phone_threshold: 0.5
